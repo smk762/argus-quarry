@@ -38,10 +38,12 @@ See [DESIGN.md](DESIGN.md) for the full rationale and phased plan.
 
 ## Install
 
+Uses [uv](https://docs.astral.sh/uv/) for env + builds (like the rest of the suite):
+
 ```bash
-make dev            # editable install with dev + cli extras
-# or
-pip install -e ".[cli]"
+make dev                      # uv venv + editable install (dev + cli extras)
+# or, manually:
+uv venv && uv pip install -e ".[cli]"
 ```
 
 ## Quickstart
