@@ -1,10 +1,15 @@
 # Argus Quarry
 
-Provenance-first acquisition of public-domain / CC0 portraits — the **input
-stage** of the Argus suite. The *quarry* digs up raw material: it downloads
-images from upstream archives and lands them, **with full provenance and
-licensing**, into a folder the rest of the suite already consumes
-(`DATASET_DIR` → `/data/images`).
+[![PyPI](https://img.shields.io/pypi/v/argus-quarry)](https://pypi.org/project/argus-quarry/)
+[![Python](https://img.shields.io/pypi/pyversions/argus-quarry)](https://pypi.org/project/argus-quarry/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/smk762/argus-quarry/actions/workflows/ci.yml/badge.svg)](https://github.com/smk762/argus-quarry/actions/workflows/ci.yml)
+
+**Provenance-first acquisition of public-domain / CC0 portraits** — the *input
+stage* of the Argus suite. The quarry digs up raw material: it downloads images
+from upstream archives and lands them, **with full provenance and licensing**,
+into a folder the rest of the suite already consumes (`DATASET_DIR` →
+`/data/images`).
 
 It is deliberately lean — *acquisition + provenance, nothing more*. Quality
 scoring, near-duplicate detection, faces, embeddings and captioning are owned
@@ -12,13 +17,18 @@ downstream by [argus-curator](https://github.com/smk762/argus-curator) and
 [argus-lens](https://github.com/smk762/argus-lens); quarry never re-implements
 them.
 
+> **Want a UI?** Quarry is CLI-only by design (see [DESIGN.md](DESIGN.md) §9).
+> The suite's web frontend — [**argus-vision-demo**](https://github.com/smk762/argus-vision-demo)
+> — surfaces the curation and captioning stages that consume quarry's output
+> (e.g. its `/curate` view scans the `Person_Name/` tree quarry publishes).
+
 ```
-argus-quarry (NEW)          argus-curator (:8101)        argus-lens (:8100)
-─ download  ─┐              ─ scan + score  ─┐           ─ caption ─┐
-─ verify    ─┤   images +   ─ near-dup      ─┤  manifest ─ buckets ─┤   dataset → LoRA
-─ provenance┤   provenance  ─ face-cluster  ─┤           ─ (ident/ ─┘
-─ SHA256    ─┴───────────►  ─ select+export ─┴──────────►  wardrobe)
-   /data/images (DATASET_DIR) ────────────────────────────►
+argus-quarry (NEW)          argus-curator (:8101)        argus-lens (:8100)        argus-vision-demo
+─ download  ─┐              ─ scan + score  ─┐           ─ caption ─┐              ─ web UI (:3000)
+─ verify    ─┤   images +   ─ near-dup      ─┤  manifest ─ buckets ─┤   dataset    ─ /curate
+─ provenance┤   provenance  ─ face-cluster  ─┤           ─ (ident/ ─┤   → LoRA     ─ caption
+─ SHA256    ─┴───────────►  ─ select+export ─┴──────────►  wardrobe)─┘
+   /data/images (DATASET_DIR) ─────────────────────────────────────────────────►
 ```
 
 See [DESIGN.md](DESIGN.md) for the full rationale and phased plan.
@@ -38,12 +48,19 @@ See [DESIGN.md](DESIGN.md) for the full rationale and phased plan.
 
 ## Install
 
-Uses [uv](https://docs.astral.sh/uv/) for env + builds (like the rest of the suite):
+```bash
+pip install argus-quarry            # library + downloaders
+pip install "argus-quarry[cli]"     # + the argus-quarry command
+pip install "argus-quarry[phash]"   # + opportunistic perceptual-hash metadata
+```
+
+For development the suite uses [uv](https://docs.astral.sh/uv/) (works on PEP 668
+"externally managed" system Pythons):
 
 ```bash
-make dev                      # uv venv + editable install (dev + cli extras)
+make dev                            # uv venv + editable install (dev + cli extras)
 # or, manually:
-uv venv && uv pip install -e ".[cli]"
+uv venv && uv pip install -e ".[dev,cli]"
 ```
 
 ## Quickstart
@@ -66,6 +83,21 @@ argus-quarry list --licence CC0
 argus-quarry verify              # re-check files decode + match recorded SHA256
 ```
 
+> Installed into a `uv` venv? Prefix commands with `uv run` (e.g.
+> `uv run argus-quarry stats`) or `source .venv/bin/activate` first.
+
+## CLI
+
+| Command | What it does |
+|---|---|
+| `run`    | Fetch into the raw pool, then (optionally) publish — the compose entrypoint |
+| `fetch`  | Download candidates into the raw pool (no publish) |
+| `export` | Publish a filtered `Person_Name/` tree into `DATASET_DIR` (symlink / `--copy`) |
+| `list`   | List landed photographs with provenance (filter by source / licence / person) |
+| `stats`  | Counts by status / source / licence + raw-pool size |
+| `verify` | Re-check landed files exist, decode, and match their recorded SHA256 |
+| `people` | Show the people seed downloaders harvest around |
+
 ## Layout produced
 
 Quarry fetches into a **raw pool** it fully owns (`$QUARRY_HOME`, a sibling
@@ -81,6 +113,20 @@ $DATASET_DIR/                    # published, curator-ready view (via export)
 └── Albert_Einstein/…            # symlinks (default) or copies into the pool
 ```
 
+## Provenance model
+
+A single SQLite database (`portraits.sqlite`, WAL mode) with two tables:
+
+- **`people`** — `name · wikidata_id · birth_year · death_year · occupation`
+- **`photographs`** — `title · photographer · year · source · source_url ·
+  licence · attribution · width · height · file_size · filename ·
+  **sha256 (UNIQUE)** · phash · remote_url · status · downloaded_at`
+
+`sha256` is the exact-dedup key (idempotent reruns); `status`
+(`pending → downloading → complete`, plus `duplicate` / `quarantined` / `failed`)
+tracks resumability. `phash` is recorded opportunistically and is *informational
+only* — it never drives dedup here (that's [argus-curator](https://github.com/smk762/argus-curator)'s job).
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Key knobs:
@@ -94,8 +140,10 @@ Copy `.env.example` to `.env`. Key knobs:
 
 ## Suite integration
 
-Bring quarry up as the `gallery` profile (a run-to-completion job) to fetch then
-publish, then curate the published view:
+Quarry ships a `gallery` profile in the suite's
+[argus-vision-demo](https://github.com/smk762/argus-vision-demo) `compose.yaml`.
+It's a run-to-completion job: fetch into the pool, publish into `DATASET_DIR`,
+then let curator/lens (and the web UI's `/curate` view) consume the result.
 
 ```bash
 docker compose --profile gallery up --build   # fetch → pool → publish DATASET_DIR
@@ -114,6 +162,9 @@ docker compose --profile curator up --build    # then curate the published image
 | Library of Congress, Smithsonian, Rijksmuseum, LAC (Karsh allow-list) | Phase 2 |
 | Europeana, Flickr Commons (strict per-record rights) | Phase 3 |
 
+New sources register in `downloaders/` behind a common `Downloader` contract, so
+adding one never touches ingest, storage, or export.
+
 ## Development
 
 ```bash
@@ -121,6 +172,12 @@ make lint     # ruff
 make test     # pytest
 make check    # lint + test + build
 ```
+
+## Related projects
+
+- [**argus-vision-demo**](https://github.com/smk762/argus-vision-demo) — the suite's Next.js web UI (captioning + `/curate`).
+- [**argus-curator**](https://github.com/smk762/argus-curator) — training-suitability scoring, near-dup dedup, face clustering.
+- [**argus-lens**](https://github.com/smk762/argus-lens) — intent-aware, multi-model captioning.
 
 ## Licence
 
