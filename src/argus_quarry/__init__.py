@@ -9,7 +9,16 @@ captioning are owned downstream by argus-curator and argus-lens.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+try:
+    # Written by hatch-vcs at build time (see pyproject [tool.hatch.build.hooks.vcs]).
+    from argus_quarry._version import __version__
+except ImportError:  # running from a source checkout that hasn't been built
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        __version__ = version("argus-quarry")
+    except PackageNotFoundError:
+        __version__ = "0.0.0+unknown"
 
 from argus_quarry.config import QuarryConfig, SourceRate
 from argus_quarry.models import (

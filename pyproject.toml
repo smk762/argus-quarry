@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "argus-quarry"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Provenance-first acquisition of public-domain / CC0 portrait images for the Argus suite"
 readme = "README.md"
 license = "MIT"
@@ -53,7 +53,15 @@ dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3"]
 argus-quarry = "argus_quarry.cli:app"
 
 [project.urls]
+Homepage = "https://github.com/smk762/argus-quarry"
 Repository = "https://github.com/smk762/argus-quarry"
+Issues = "https://github.com/smk762/argus-quarry/issues"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/argus_quarry/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/argus_quarry"]
