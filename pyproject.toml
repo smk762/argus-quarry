@@ -38,7 +38,7 @@ dependencies = [
 cli = ["typer>=0.12", "rich>=13.0"]
 # pHash is opportunistic, informational metadata only (never drives dedup here).
 phash = ["ImageHash>=4.3"]
-# Deferred read-only provenance API (see DESIGN.md section 9).
+# Read-only provenance API — `argus-quarry serve` (see DESIGN.md section 9).
 server = ["fastapi>=0.110", "uvicorn>=0.27"]
 all = [
     "typer>=0.12",
@@ -47,7 +47,8 @@ all = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
 ]
-dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3"]
+# fastapi is here so the server tests run (they importorskip it otherwise).
+dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110"]
 
 [project.scripts]
 argus-quarry = "argus_quarry.cli:app"

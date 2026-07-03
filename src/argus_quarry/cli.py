@@ -1,4 +1,4 @@
-"""argus-quarry CLI (Typer): run / fetch / export / list / stats / verify / subjects.
+"""argus-quarry CLI (Typer): run / fetch / export / list / stats / verify / subjects / serve.
 
 Everything is idempotent — reruns resume partials and skip completed work. The
 ``run`` command is the compose entrypoint: fetch into the raw pool, then publish
@@ -244,6 +244,29 @@ def subjects(
             extra = f'search="{s.query}"'
         typer.echo(f"  {s.category:<9} {s.folder:<24} {extra}")
     typer.echo(f"\n{len(rows)} subject(s).")
+
+
+@app.command()
+def serve(
+    port: int = Option(8102, "--port", "-p", help="Port to listen on"),
+    host: str = Option("0.0.0.0", "--host", help="Host to bind to"),
+    cors: bool = Option(False, "--cors", help="Enable CORS (allow all origins)"),
+) -> None:
+    """Start the read-only provenance API (FastAPI) on :8102.
+
+    The pool root comes from $QUARRY_HOME (default ./quarry), same as every
+    other command. Strictly read-only — see DESIGN.md section 9.
+    """
+    try:
+        import uvicorn
+
+        from argus_quarry.server import create_app
+    except ImportError as _exc:  # pragma: no cover
+        typer.echo("Server requires: pip install argus-quarry[server]", err=True)
+        raise typer.Exit(1) from _exc
+
+    application = create_app(cors=cors)
+    uvicorn.run(application, host=host, port=port)
 
 
 # Backward-compatible alias for the pre-0.2 `people` command (identity only).

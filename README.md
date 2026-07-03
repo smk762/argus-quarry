@@ -61,6 +61,7 @@ See [DESIGN.md](DESIGN.md) for the full rationale and phased plan.
 pip install argus-quarry            # library + downloaders
 pip install "argus-quarry[cli]"     # + the argus-quarry command
 pip install "argus-quarry[phash]"   # + opportunistic perceptual-hash metadata
+pip install "argus-quarry[server]"  # + the read-only provenance HTTP API (serve)
 ```
 
 For development the suite uses [uv](https://docs.astral.sh/uv/) (works on PEP 668
@@ -109,6 +110,7 @@ argus-quarry verify              # re-check files decode + match recorded SHA256
 | `stats`  | Counts by status / category / source / licence + raw-pool size |
 | `verify` | Re-check landed files exist, decode, and match their recorded SHA256 |
 | `subjects` | Show the subject seed(s) downloaders harvest around (filter by `--category`) |
+| `serve`  | Start the read-only provenance HTTP API on `:8102` (needs the `server` extra) |
 
 `run`, `fetch`, `export` and `list` all accept `--category`
 (`identity` / `wardrobe` / `setting` / `concept`); with none given they span every category.
@@ -158,6 +160,30 @@ Copy `.env.example` to `.env`. Key knobs:
 | `QUARRY_MAX_GB` | `40` | Total raw-pool ceiling; `0` = unlimited |
 | `COMMONS_USER_AGENT` | descriptive default | Polite UA (Commons/LoC expect one) |
 | `DATASET_DIR` | `./data` | Published view `export` writes into |
+
+## HTTP server
+
+A tiny **read-only** provenance API (FastAPI) over the raw pool — no mutation
+endpoints, ever. It powers the
+[argus-studio](https://github.com/smk762/argus-studio) `/gallery` view, the same
+way `/curate` talks to argus-curator on `:8101`.
+
+```bash
+pip install "argus-quarry[server]"          # fastapi + uvicorn
+argus-quarry serve --host 0.0.0.0 --port 8102 --cors
+```
+
+The pool root comes from `$QUARRY_HOME` (default `./quarry`), exactly like every
+other command — the compose service just sets `QUARRY_HOME=/data/quarry`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | `{status, service, version, quarry_home}` |
+| `GET /stats` | Counts by status / category / source / licence + `total_bytes` (mirrors `stats`) |
+| `GET /subjects?category=` | Distinct subjects with landed photo counts: `{subjects: [{folder, category, photo_count}]}` |
+| `GET /photos?category=&subject=&licence=&source=&status=&limit=&offset=` | Paginated provenance rows: `{total, offset, limit, photos: […]}`; `status` defaults to `complete` (pass empty for all), `licence` accepts CSV (`CC0,PD`), `limit` ≤ 500 |
+| `GET /photos/{id}` | One photograph with full provenance (404 if unknown) |
+| `GET /thumb?id=&size=384` | WEBP thumbnail rendered from the pooled file (`size` = longest edge, capped at 1024) |
 
 ## Suite integration
 

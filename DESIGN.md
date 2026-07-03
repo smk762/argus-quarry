@@ -107,7 +107,7 @@ argus-quarry/
 │   │   ├── lac.py            # Library & Archives Canada  (Phase 2, Karsh)
 │   │   ├── europeana.py      # Europeana                  (Phase 3, rights-messy)
 │   │   └── flickr.py         # Flickr Commons (optional)  (Phase 3)
-│   └── server/               # OPTIONAL, deferred — see §9
+│   └── server/               # read-only provenance API (`serve`, :8102) — see §9
 └── tests/
 ```
 
@@ -321,10 +321,13 @@ Next.js frontend, so:
 
 - **Phase 1–2:** no standalone UI. `argus-quarry stats` / `list` on the CLI is
   enough to inspect provenance.
-- **Later (optional):** a tiny read-only FastAPI `server/` exposing provenance
-  queries (by subject / category / photographer / year / source / licence), which the demo
-  frontend could surface as a `/gallery` route — consistent with how `/curate`
-  already talks to curator. Not built until there's demand.
+- **Later (optional) — now built:** a tiny read-only FastAPI `server/`
+  (`argus-quarry serve`, the `server` extra, `:8102`) exposing provenance
+  queries: `/health`, `/stats`, `/subjects`, `/photos` (filter by subject /
+  category / source / licence / status, paginated), `/photos/{id}` and a
+  `/thumb` WEBP renderer over the pooled files. The demo frontend surfaces it
+  as the `/gallery` route — consistent with how `/curate` already talks to
+  curator. Strictly read-only: no mutation endpoints.
 
 This keeps us to one real UI (the demo) instead of maintaining a second.
 

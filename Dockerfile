@@ -15,9 +15,13 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 COPY . /app
 
+# Extras to install; the argus-studio compose adds "server" for the
+# read-only provenance API behind its /gallery page.
+ARG EXTRAS=cli,phash
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install ".[cli,phash]"
+    pip install ".[${EXTRAS}]"
 
 # Run-to-completion acquisition job (not a long-lived server). The compose
 # `gallery` profile overrides this command with concrete source/limit flags.

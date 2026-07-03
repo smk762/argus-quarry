@@ -303,16 +303,17 @@ class ProvenanceStore:
             q += " WHERE status = 'complete'"
         return int(self._conn.execute(q).fetchone()["total"])
 
-    # ── queries for list / stats / export / verify ─────────────────
-    def iter_photographs(
-        self,
+    # ── queries for list / stats / export / verify / server ────────
+    @staticmethod
+    def _photo_where(
         *,
-        status: str | None = "complete",
-        source: str | None = None,
-        licences: list[str] | None = None,
-        subject: str | None = None,
-        category: str | None = None,
-    ) -> list[Photograph]:
+        status: str | None,
+        source: str | None,
+        licences: list[str] | None,
+        subject: str | None,
+        category: str | None,
+    ) -> tuple[str, list[object]]:
+        """Shared WHERE-clause builder for the photograph list/count queries."""
         clauses: list[str] = []
         params: list[object] = []
         if status:
@@ -332,11 +333,66 @@ class ProvenanceStore:
             clauses.append("sub.name = ?")
             params.append(subject)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-        q = (
-            "SELECT ph.*, sub.name AS subject FROM photographs ph "
-            "JOIN subjects sub ON sub.id = ph.subject_id" + where + " ORDER BY ph.category, sub.name, ph.id"
+        return where, params
+
+    def iter_photographs(
+        self,
+        *,
+        status: str | None = "complete",
+        source: str | None = None,
+        licences: list[str] | None = None,
+        subject: str | None = None,
+        category: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Photograph]:
+        where, params = self._photo_where(
+            status=status, source=source, licences=licences, subject=subject, category=category
         )
+        q = self._PHOTO_SELECT + where + " ORDER BY ph.category, sub.name, ph.id"
+        if limit is not None:
+            q += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
         return [self._row_to_photo(r) for r in self._conn.execute(q, params) if r is not None]
+
+    def count_photographs(
+        self,
+        *,
+        status: str | None = "complete",
+        source: str | None = None,
+        licences: list[str] | None = None,
+        subject: str | None = None,
+        category: str | None = None,
+    ) -> int:
+        """Number of photographs matching the same filters as :meth:`iter_photographs`."""
+        where, params = self._photo_where(
+            status=status, source=source, licences=licences, subject=subject, category=category
+        )
+        q = "SELECT COUNT(*) AS n FROM photographs ph JOIN subjects sub ON sub.id = ph.subject_id" + where
+        return int(self._conn.execute(q, params).fetchone()["n"])
+
+    def get_photograph(self, photo_id: int) -> Photograph | None:
+        cur = self._conn.execute(self._PHOTO_SELECT + " WHERE ph.id = ?", (photo_id,))
+        return self._row_to_photo(cur.fetchone())
+
+    def subjects_with_counts(self, *, category: str | None = None) -> list[dict[str, object]]:
+        """Distinct subjects with their landed (``complete``) photo counts."""
+        where = ""
+        params: list[object] = []
+        if category:
+            where = " WHERE sub.category = ?"
+            params.append(normalise_category(category))
+        q = (
+            "SELECT sub.name AS folder, sub.category AS category, "
+            "COUNT(CASE WHEN ph.status = 'complete' THEN 1 END) AS photo_count "
+            "FROM subjects sub LEFT JOIN photographs ph ON ph.subject_id = sub.id"
+            + where
+            + " GROUP BY sub.id ORDER BY sub.category, sub.name"
+        )
+        return [
+            {"folder": r["folder"], "category": r["category"], "photo_count": int(r["photo_count"])}
+            for r in self._conn.execute(q, params)
+        ]
 
     def counts_by(self, column: str, *, only_complete: bool = True) -> dict[str, int]:
         if column not in {"source", "licence", "status", "category"}:
