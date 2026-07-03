@@ -88,6 +88,11 @@ def test_migrates_legacy_people_schema(config):
     con.commit()
     con.close()
 
+    # A legacy landed file sits under the flat images/<subject>/ layout.
+    legacy_file = config.images_dir / "Albert_Einstein" / "legacy.jpg"
+    legacy_file.parent.mkdir(parents=True, exist_ok=True)
+    legacy_file.write_bytes(b"x" * 10)
+
     with ProvenanceStore(db_path) as store:
         # Legacy row survives with a default identity category.
         rows = store.iter_photographs(status="complete")
@@ -95,9 +100,25 @@ def test_migrates_legacy_people_schema(config):
         assert rows[0].subject == "Albert_Einstein"
         assert rows[0].category == "identity"
         assert store.total_bytes() == 10
-        # New writes work against the migrated schema.
+        # File was relocated into the category-sorted layout.
+        assert not legacy_file.exists()
+        assert (config.images_dir / "identity" / "Albert_Einstein" / "legacy.jpg").exists()
+        # Migrated DB accepts the same slug in a second category (UNIQUE(name, category)).
+        einstein_identity = store.upsert_subject(Subject(name="Albert Einstein", category="identity"))
+        einstein_concept = store.upsert_subject(Subject(name="Albert Einstein", category="concept"))
+        assert einstein_identity != einstein_concept
         wid = store.upsert_subject(Subject(name="Kimono", category="wardrobe"))
         assert store.subject_name(wid) == "Kimono"
+
+
+def test_iter_photographs_category_filter_is_case_insensitive(config):
+    with ProvenanceStore(config.db_path) as store:
+        wid = store.upsert_subject(Subject(name="Kimono", category="wardrobe"))
+        c = store.insert_pending(_photo(wid, "https://img/c.jpg", category="wardrobe", subject="Kimono"))
+        store.mark_complete(c, filename="c.jpg", sha256="cc", width=1, height=1, file_size=1)
+        # Mixed-case filter still matches the lower-cased stored category.
+        assert len(store.iter_photographs(category="Wardrobe")) == 1
+        assert len(store.iter_photographs(category="WARDROBE")) == 1
 
 
 def test_iter_photographs_filters_by_category(config):

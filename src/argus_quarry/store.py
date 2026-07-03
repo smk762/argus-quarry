@@ -14,7 +14,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from argus_quarry.models import DEFAULT_CATEGORY, Photograph, Subject
+from argus_quarry.models import DEFAULT_CATEGORY, Photograph, Subject, normalise_category
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS subjects (
@@ -88,12 +88,73 @@ class ProvenanceStore:
             if not self._column_exists(table, name):
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {coldef}")
 
+    def _subjects_unique_is_name_only(self) -> bool:
+        """True if `subjects` carries the pre-0.2 UNIQUE(name) instead of UNIQUE(name, category)."""
+        for idx in self._conn.execute("PRAGMA index_list(subjects)"):
+            if idx["unique"]:
+                cols = [r["name"] for r in self._conn.execute(f"PRAGMA index_info('{idx['name']}')")]
+                if cols == ["name"]:
+                    return True
+        return False
+
+    def _rebuild_subjects_unique(self) -> None:
+        """Swap the legacy UNIQUE(name) for UNIQUE(name, category).
+
+        A column-level UNIQUE can't be dropped in place in SQLite, so recreate the
+        table (ids preserved). Done with FK enforcement off since `photographs`
+        references `subjects(id)` and those ids are carried over unchanged.
+        """
+        self._conn.commit()
+        self._conn.execute("PRAGMA foreign_keys=OFF")
+        self._conn.executescript(
+            """
+            CREATE TABLE subjects_new (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                name         TEXT NOT NULL,
+                category     TEXT NOT NULL DEFAULT 'identity',
+                wikidata_id  TEXT,
+                birth_year   INTEGER,
+                death_year   INTEGER,
+                occupation   TEXT,
+                UNIQUE(name, category)
+            );
+            INSERT INTO subjects_new (id, name, category, wikidata_id, birth_year, death_year, occupation)
+                SELECT id, name, category, wikidata_id, birth_year, death_year, occupation FROM subjects;
+            DROP TABLE subjects;
+            ALTER TABLE subjects_new RENAME TO subjects;
+            """
+        )
+        self._conn.execute("PRAGMA foreign_keys=ON")
+
+    def _relocate_legacy_files(self) -> None:
+        """Move landed files from flat `images/<subject>/` into `images/<category>/<subject>/`.
+
+        Legacy pools stored every file directly under the subject folder; the new
+        layout sorts by category. Relocate per recorded row so `verify`/`export`
+        (which build `images/<category>/<subject>/…`) keep resolving after upgrade.
+        """
+        images_dir = self.db_path.parent.parent / "images"
+        if not images_dir.exists():
+            return
+        rows = self._conn.execute(
+            "SELECT ph.category AS category, ph.filename AS filename, sub.name AS subject "
+            "FROM photographs ph JOIN subjects sub ON sub.id = ph.subject_id "
+            "WHERE ph.filename IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            old = images_dir / row["subject"] / row["filename"]
+            new = images_dir / row["category"] / row["subject"] / row["filename"]
+            if old.exists() and not new.exists():
+                new.parent.mkdir(parents=True, exist_ok=True)
+                old.replace(new)
+
     def _migrate(self) -> None:
-        # Legacy (pre-0.2) schema used `people`/`person_id`, no category, and
-        # fewer photograph columns. Rename/extend in place so existing pools
-        # keep their provenance, then let the CREATE TABLE IF NOT EXISTS below
-        # cover fresh installs.
-        if self._table_exists("people") and not self._table_exists("subjects"):
+        # Legacy (pre-0.2) schema used `people`/`person_id`, no category, fewer
+        # photograph columns, a flat image layout, and UNIQUE(name). Rename/extend
+        # in place so existing pools keep their provenance, then let the CREATE
+        # TABLE IF NOT EXISTS below cover fresh installs.
+        legacy = self._table_exists("people") and not self._table_exists("subjects")
+        if legacy:
             self._conn.execute("ALTER TABLE people RENAME TO subjects")
         if self._table_exists("subjects"):
             self._ensure_columns(
@@ -106,6 +167,8 @@ class ProvenanceStore:
                     "occupation": "TEXT",
                 },
             )
+            if self._subjects_unique_is_name_only():
+                self._rebuild_subjects_unique()
         if self._table_exists("photographs"):
             if self._column_exists("photographs", "person_id") and not self._column_exists("photographs", "subject_id"):
                 self._conn.execute("ALTER TABLE photographs RENAME COLUMN person_id TO subject_id")
@@ -131,6 +194,8 @@ class ProvenanceStore:
                 },
             )
         self._conn.executescript(_SCHEMA)
+        if legacy:
+            self._relocate_legacy_files()
         self._conn.commit()
 
     def close(self) -> None:
@@ -262,7 +327,7 @@ class ProvenanceStore:
             params.extend(licences)
         if category:
             clauses.append("ph.category = ?")
-            params.append(category)
+            params.append(normalise_category(category))
         if subject:
             clauses.append("sub.name = ?")
             params.append(subject)
