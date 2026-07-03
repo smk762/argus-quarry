@@ -1,7 +1,7 @@
 # argus-quarry — Design Doc (Draft)
 
 > Status: **proposal / plan only** — no code yet.
-> Owner: smk762 · Suite: Argus · Sibling of `argus-lens`, `argus-curator`, `argus-vision-demo`.
+> Owner: smk762 · Suite: Argus · Sibling of `argus-lens`, `argus-curator`, `argus-studio`.
 
 The *quarry* is where the suite digs up raw material. `argus-quarry` acquires
 public-domain / CC0 images from upstream archives and lands them — **with full
@@ -62,7 +62,7 @@ the exact loosely-coupled pattern the suite already uses.
 | CLIP / face embeddings | `argus-curator` (`gpu`/`faces`) | Same. |
 | Quality/identity search & ranking | `argus-curator` manifest + CSV | Provenance search stays here; *quality* search is curator's. |
 | Captioning | `argus-lens` | — |
-| Rich gallery UI | `argus-vision-demo` frontend | Avoid a second UI (see §9). |
+| Rich gallery UI | `argus-studio` frontend | Avoid a second UI (see §9). |
 
 **Net effect vs. the original brief:** the `quality` table and all CV
 (quality/faces/embeddings) sections are dropped from quarry. The DB shrinks to
@@ -364,7 +364,7 @@ CV/search/curation stages rather than duplicating them.
 - `downloaders/commons.py` (Wikimedia Commons).
 - `export` (symlink/`--copy` published tree, with `--licence` / `--category` filters).
 - Typer CLI: `run` (fetch+export), `fetch`, `export`, `list`, `stats`, `verify`, `subjects`.
-- `gallery` compose profile wired into `argus-vision-demo/compose.yaml`.
+- `gallery` compose profile wired into `argus-studio/compose.yaml`.
 
 **Phase 2 — breadth**
 - `loc`, `smithsonian`, `rijksmuseum`, curated `lac` (Karsh allow-list) downloaders.

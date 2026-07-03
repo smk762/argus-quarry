@@ -24,12 +24,12 @@ downstream by [argus-curator](https://github.com/smk762/argus-curator) and
 them.
 
 > **Want a UI?** Quarry is CLI-only by design (see [DESIGN.md](DESIGN.md) §9).
-> The suite's web frontend — [**argus-vision-demo**](https://github.com/smk762/argus-vision-demo)
+> The suite's web frontend — [**argus-studio**](https://github.com/smk762/argus-studio)
 > — surfaces the curation and captioning stages that consume quarry's output
 > (e.g. its `/curate` view scans the `<category>/<subject>/` tree quarry publishes).
 
 ```
-argus-quarry (NEW)          argus-curator (:8101)        argus-lens (:8100)        argus-vision-demo
+argus-quarry (NEW)          argus-curator (:8101)        argus-lens (:8100)        argus-studio
 ─ download  ─┐              ─ scan + score  ─┐           ─ caption ─┐              ─ web UI (:3000)
 ─ verify    ─┤   images +   ─ near-dup      ─┤  manifest ─ buckets ─┤   dataset    ─ /curate
 ─ provenance┤   provenance  ─ face-cluster  ─┤           ─ (ident/ ─┤   → LoRA     ─ caption
@@ -162,7 +162,7 @@ Copy `.env.example` to `.env`. Key knobs:
 ## Suite integration
 
 Quarry ships a `gallery` profile in the suite's
-[argus-vision-demo](https://github.com/smk762/argus-vision-demo) `compose.yaml`.
+[argus-studio](https://github.com/smk762/argus-studio) `compose.yaml`.
 It's a run-to-completion job: fetch into the pool, publish into `DATASET_DIR`,
 then let curator/lens (and the web UI's `/curate` view) consume the result.
 
@@ -196,7 +196,7 @@ make check    # lint + test + build
 
 ## Related projects
 
-- [**argus-vision-demo**](https://github.com/smk762/argus-vision-demo) — the suite's Next.js web UI (captioning + `/curate`).
+- [**argus-studio**](https://github.com/smk762/argus-studio) — the suite's Next.js web UI (captioning + `/curate`).
 - [**argus-curator**](https://github.com/smk762/argus-curator) — training-suitability scoring, near-dup dedup, face clustering.
 - [**argus-lens**](https://github.com/smk762/argus-lens) — intent-aware, multi-model captioning.
 
