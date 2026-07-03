@@ -1,23 +1,35 @@
 """Pydantic models — the acquisition stage's data contract.
 
-The :class:`PortraitRecord` is the source-independent object every downloader
+The :class:`SourceRecord` is the source-independent object every downloader
 yields. Because each archive maps its own API onto the *same* record, the rest
 of the pipeline (ingest, store, export) never learns which source a file came
 from. Provenance and licence travel with every record — that is the whole point
 of the tool (``provenance-first``): a record with no accepted licence never
 lands (see :func:`is_accepted_licence`).
+
+Subjects are grouped into **categories** that mirror the suite's LoRA-training
+taxonomy (identity / wardrobe / setting / concept). A category is independent of
+identity: a subject can be a person, a garment, a scene, or a visual concept.
+On disk everything is sorted into ``<category>/<subject>/`` subfolders.
 """
 
 from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Ingest lifecycle for a photograph row. ``pending``/``downloading`` support
 # resumability; ``duplicate``/``quarantined`` record *why* a candidate did not
 # land so reruns skip it cheaply instead of re-fetching.
-PhotoStatus = tuple(("pending", "downloading", "complete", "failed", "duplicate", "quarantined"))
+PhotoStatus = ("pending", "downloading", "complete", "failed", "duplicate", "quarantined")
+
+# Subject categories, aligned with the suite's LoRA-training taxonomy
+# (argus-curator ``TargetCategory``). ``identity`` is people/portraits; the rest
+# are identity-independent training workflows. The tuple is the canonical set,
+# but categories are not hard-validated so downstream can extend them.
+SUBJECT_CATEGORIES = ("identity", "wardrobe", "setting", "concept")
+DEFAULT_CATEGORY = "identity"
 
 # Licence strings we accept as free-to-use for this archive. We normalise the
 # messy per-source labels (Commons ``extmetadata``, museum rights URIs, …) and
@@ -60,37 +72,61 @@ def is_accepted_licence(raw: str | None) -> bool:
     return normalise_licence(raw) is not None
 
 
+def normalise_category(raw: str | None) -> str:
+    """Canonical category token (lower-cased); empty/None falls back to identity."""
+    if not raw or not raw.strip():
+        return DEFAULT_CATEGORY
+    return raw.strip().lower()
+
+
 _SLUG_RE = re.compile(r"[^A-Za-z0-9]+")
 
 
 def slugify_name(name: str) -> str:
-    """Canonical folder-safe person name, e.g. ``"Albert Einstein"`` -> ``"Albert_Einstein"``."""
+    """Canonical folder-safe subject name, e.g. ``"Red dress"`` -> ``"Red_dress"``."""
     cleaned = _SLUG_RE.sub("_", name.strip()).strip("_")
     return cleaned or "unknown"
 
 
-class Person(BaseModel):
-    """A subject to harvest portraits of.
+class Subject(BaseModel):
+    """A thing to harvest images of, within a :data:`category <SUBJECT_CATEGORIES>`.
 
-    Decoupled from the downloaders: the same shape is produced by the curated
-    ``seeds/people.yaml`` loader and (Phase 2) the Wikidata SPARQL harvester, so
-    downloaders never care which source supplied the list.
+    Decoupled from the downloaders: the same shape is produced by every curated
+    ``seeds/<category>.yaml`` loader (and, for identity, the Phase 2 Wikidata
+    harvester), so downloaders never care which source supplied the list. The
+    identity-only fields (``wikidata_id`` / ``birth_year`` / ``death_year`` /
+    ``occupation``) stay ``None`` for wardrobe / setting / concept subjects.
     """
 
     name: str
+    category: str = DEFAULT_CATEGORY
+    # Explicit archive search string; defaults to ``name`` when unset.
+    search: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+
+    # identity-only metadata
     wikidata_id: str | None = None
     birth_year: int | None = None
     death_year: int | None = None
     occupation: str | None = None
-    aliases: list[str] = Field(default_factory=list)
+
+    @field_validator("category")
+    @classmethod
+    def _normalise_category(cls, v: str) -> str:
+        return normalise_category(v)
 
     @property
     def folder(self) -> str:
-        """Canonical folder / DB name for this person (e.g. ``Albert_Einstein``)."""
+        """Canonical folder / DB name for this subject (e.g. ``Red_dress``)."""
         return slugify_name(self.name)
 
+    @property
+    def query(self) -> str:
+        """The string a downloader searches the archive with."""
+        return self.search or self.name
 
-class PortraitRecord(BaseModel):
+
+class SourceRecord(BaseModel):
     """The common contract every downloader yields (DESIGN.md section 4).
 
     ``ingest`` turns each record into bytes on disk plus a DB row, idempotently.
@@ -98,8 +134,11 @@ class PortraitRecord(BaseModel):
     image can be re-fetched at original size later without losing provenance.
     """
 
-    # identity / subject
-    person_name: str
+    # subject / category
+    subject: str  # canonical folder name, e.g. "Red_dress" or "Albert_Einstein"
+    category: str = DEFAULT_CATEGORY
+
+    # identity-only metadata (None for non-person subjects)
     wikidata_id: str | None = None
     birth_year: int | None = None
     death_year: int | None = None
@@ -117,6 +156,11 @@ class PortraitRecord(BaseModel):
     licence: str
     attribution: str | None = None
 
+    @field_validator("category")
+    @classmethod
+    def _normalise_category(cls, v: str) -> str:
+        return normalise_category(v)
+
 
 class Photograph(BaseModel):
     """A ``photographs`` row — the persisted result of ingesting a record.
@@ -127,8 +171,9 @@ class Photograph(BaseModel):
     """
 
     id: int | None = None
-    person_id: int
-    person_name: str
+    subject_id: int
+    subject: str
+    category: str = DEFAULT_CATEGORY
 
     title: str | None = None
     photographer: str | None = None
@@ -149,3 +194,9 @@ class Photograph(BaseModel):
     remote_url: str
     status: str = "pending"
     downloaded_at: str | None = None
+
+
+# ── Backward-compatible aliases (the pre-0.2 portrait-only API) ─────────
+# quarry began life person/portrait-only; keep the old names importable.
+Person = Subject
+PortraitRecord = SourceRecord

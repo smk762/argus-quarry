@@ -1,10 +1,11 @@
 """Wikimedia Commons downloader (Phase 1).
 
 Uses the MediaWiki API's ``generator=search`` over the File namespace to find
-candidate portraits for a person, then reads each file's ``imageinfo`` +
-``extmetadata`` for the full-resolution URL, dimensions, licence and
-attribution. Licence *acceptance* is decided centrally in ingest — this module
-just faithfully reports whatever provenance Commons exposes.
+candidate images for a subject (person, garment, scene or concept), then reads
+each file's ``imageinfo`` + ``extmetadata`` for the full-resolution URL,
+dimensions, licence and attribution. Licence *acceptance* is decided centrally
+in ingest — this module just faithfully reports whatever provenance Commons
+exposes.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from collections.abc import Iterator
 import structlog
 
 from argus_quarry.downloaders.base import Downloader
-from argus_quarry.models import Person, PortraitRecord
+from argus_quarry.models import SourceRecord, Subject
 
 logger = structlog.get_logger()
 
@@ -54,12 +55,12 @@ def _meta(extmetadata: dict, key: str) -> str | None:
 class CommonsDownloader(Downloader):
     name = "commons"
 
-    def harvest(self, person: Person, limit: int) -> Iterator[PortraitRecord]:
+    def harvest(self, subject: Subject, limit: int) -> Iterator[SourceRecord]:
         params = {
             "action": "query",
             "format": "json",
             "generator": "search",
-            "gsrsearch": person.name,
+            "gsrsearch": subject.query,
             "gsrnamespace": 6,  # File:
             "gsrlimit": max(1, min(limit, 50)),
             "prop": "imageinfo",
@@ -71,7 +72,7 @@ class CommonsDownloader(Downloader):
         try:
             data = self.net.get_json(API_URL, params=params, source=self.name)
         except Exception as exc:
-            logger.warning("commons_search_failed", person=person.name, error=str(exc))
+            logger.warning("commons_search_failed", subject=subject.name, error=str(exc))
             return
 
         pages = (data.get("query") or {}).get("pages") or {}
@@ -97,12 +98,13 @@ class CommonsDownloader(Downloader):
             title = (page.get("title") or "").removeprefix("File:") or None
             year = _extract_year(_meta(ext, "DateTimeOriginal"), title)
 
-            yield PortraitRecord(
-                person_name=person.folder,
-                wikidata_id=person.wikidata_id,
-                birth_year=person.birth_year,
-                death_year=person.death_year,
-                occupation=person.occupation,
+            yield SourceRecord(
+                subject=subject.folder,
+                category=subject.category,
+                wikidata_id=subject.wikidata_id,
+                birth_year=subject.birth_year,
+                death_year=subject.death_year,
+                occupation=subject.occupation,
                 title=title,
                 photographer=artist,
                 year=year,

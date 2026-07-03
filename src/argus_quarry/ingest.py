@@ -1,10 +1,11 @@
-"""Ingest — turn a :class:`PortraitRecord` into bytes on disk + a DB row.
+"""Ingest — turn a :class:`SourceRecord` into bytes on disk + a DB row.
 
 The pipeline per record is: **licence-gate → resume-check → download → verify →
 cap → SHA256 dedup → land in the raw pool → record**. Everything is idempotent:
 reruns resume partials, skip completed/quarantined candidates, and never
 duplicate bytes (SHA256 ``UNIQUE``). The total-archive budget is enforced from
-an O(1) running byte counter seeded once from the DB.
+an O(1) running byte counter seeded once from the DB. Files land under
+``images/<category>/<subject>/`` so a single pool serves every LoRA workflow.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import structlog
 from PIL import Image
 
 from argus_quarry.config import QuarryConfig
-from argus_quarry.models import Photograph, PortraitRecord, is_accepted_licence, normalise_licence
+from argus_quarry.models import Photograph, SourceRecord, Subject, is_accepted_licence, normalise_licence
 from argus_quarry.net import NetClient, SizeCapExceeded
 from argus_quarry.store import ProvenanceStore
 
@@ -82,7 +83,7 @@ class IngestEngine:
         cap = self.config.max_total_bytes
         return cap > 0 and (self._pool_bytes + extra) > cap
 
-    def ingest_record(self, record: PortraitRecord) -> IngestOutcome:
+    def ingest_record(self, record: SourceRecord) -> IngestOutcome:
         # 1. Licence gate — a record with no accepted licence never lands.
         canon = normalise_licence(record.licence)
         existing = self.store.get_by_remote_url(record.remote_url)
@@ -98,8 +99,8 @@ class IngestEngine:
         if self._budget_would_exceed(0):
             raise BudgetReached(f"pool at {self._pool_bytes} bytes, cap {self.config.max_total_bytes}")
 
-        person_id = self._upsert_person(record)
-        photo_id = existing.id if existing else self._insert_pending(record, person_id, canon or record.licence)
+        subject_id = self._upsert_subject(record)
+        photo_id = existing.id if existing else self._insert_pending(record, subject_id, canon or record.licence)
         self.store.set_status(photo_id, "downloading")
 
         tmp = (
@@ -143,9 +144,9 @@ class IngestEngine:
             logger.info("budget_reached", pool_bytes=self._pool_bytes, next_size=file_size)
             raise BudgetReached(f"landing {file_size} bytes would exceed cap {self.config.max_total_bytes}")
 
-        # 5. Land in the raw pool + record.
+        # 5. Land in the raw pool + record (sorted into <category>/<subject>/).
         filename = self._pool_filename(record, sha256, landed.suffix)
-        dest = self.config.images_dir / record.person_name / filename
+        dest = self.config.images_dir / record.category / record.subject / filename
         dest.parent.mkdir(parents=True, exist_ok=True)
         landed.replace(dest)
 
@@ -163,12 +164,11 @@ class IngestEngine:
         return IngestOutcome(status="complete", photo_id=photo_id, filename=filename, file_size=file_size)
 
     # ── helpers ─────────────────────────────────────────────────────
-    def _upsert_person(self, record: PortraitRecord):
-        from argus_quarry.models import Person
-
-        return self.store.upsert_person(
-            Person(
-                name=record.person_name,
+    def _upsert_subject(self, record: SourceRecord) -> int:
+        return self.store.upsert_subject(
+            Subject(
+                name=record.subject,
+                category=record.category,
                 wikidata_id=record.wikidata_id,
                 birth_year=record.birth_year,
                 death_year=record.death_year,
@@ -176,11 +176,12 @@ class IngestEngine:
             )
         )
 
-    def _insert_pending(self, record: PortraitRecord, person_id: int, licence: str) -> int:
+    def _insert_pending(self, record: SourceRecord, subject_id: int, licence: str) -> int:
         return self.store.insert_pending(
             Photograph(
-                person_id=person_id,
-                person_name=record.person_name,
+                subject_id=subject_id,
+                subject=record.subject,
+                category=record.category,
                 title=record.title,
                 photographer=record.photographer,
                 year=record.year,
@@ -193,12 +194,12 @@ class IngestEngine:
             )
         )
 
-    def _quarantine(self, record: PortraitRecord, existing: Photograph | None) -> None:
+    def _quarantine(self, record: SourceRecord, existing: Photograph | None) -> None:
         if existing is not None:
             self.store.set_status(existing.id, "quarantined")
             return
-        person_id = self._upsert_person(record)
-        pid = self._insert_pending(record, person_id, record.licence)
+        subject_id = self._upsert_subject(record)
+        pid = self._insert_pending(record, subject_id, record.licence)
         self.store.set_status(pid, "quarantined")
 
     def _verify_and_cap(self, src: Path, ext: str) -> tuple[Path, int, int, str | None]:
@@ -220,9 +221,9 @@ class IngestEngine:
 
         return src, width, height, phash
 
-    def _pool_filename(self, record: PortraitRecord, sha256: str, ext: str) -> str:
+    def _pool_filename(self, record: SourceRecord, sha256: str, ext: str) -> str:
         year = str(record.year) if record.year else "ny"
-        base = record.person_name.lower()
+        base = record.subject.lower()
         return f"{base}_{year}_{record.source}_{sha256[:8]}{ext}"
 
 
@@ -240,9 +241,9 @@ class FetchSummary:
 
 
 def fetch(engine: IngestEngine, records) -> FetchSummary:
-    """Ingest an iterable of :class:`PortraitRecord`, stopping cleanly on budget.
+    """Ingest an iterable of :class:`SourceRecord`, stopping cleanly on budget.
 
-    ``records`` is any iterable (a downloader stream, a flattened multi-person
+    ``records`` is any iterable (a downloader stream, a flattened multi-subject
     generator, or a fixture list). Returns per-status counts.
     """
     summary = FetchSummary()

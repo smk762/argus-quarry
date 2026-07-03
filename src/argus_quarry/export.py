@@ -1,10 +1,10 @@
-"""Export — publish a clean, curator-ready ``Person_Name/`` tree into ``DATASET_DIR``.
+"""Export — publish a clean, curator-ready ``<category>/<subject>/`` tree into ``DATASET_DIR``.
 
 Quarry fetches into a raw pool it fully owns; ``export`` then publishes a
 filtered view (symlink by default, ``--copy`` when a mount can't cross the
-boundary). Because the pool stays separate, a subset (e.g. only ``CC0``) can be
-re-published without re-downloading, and a curator scan only ever sees clean
-images.
+boundary). Because the pool stays separate, a subset (e.g. only ``CC0``, or a
+single category) can be re-published without re-downloading, and a curator scan
+only ever sees clean images sorted by category.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class ExportResult:
     published: int = 0
     skipped: int = 0
     missing: int = 0
-    people: set[str] = field(default_factory=set)
+    subjects: set[str] = field(default_factory=set)
 
 
 def _publish_one(src: Path, dst: Path, mode: str) -> None:
@@ -48,26 +48,27 @@ def export_tree(
     *,
     mode: str = "symlink",
     licences: list[str] | None = None,
-    person: str | None = None,
+    subject: str | None = None,
+    category: str | None = None,
 ) -> ExportResult:
-    """Publish complete photographs into ``dest`` as ``Person_Name/<file>``."""
+    """Publish complete photographs into ``dest`` as ``<category>/<subject>/<file>``."""
     dest_root = Path(dest)
     result = ExportResult(dest=str(dest_root), mode=mode)
 
-    photos = store.iter_photographs(status="complete", licences=licences, person=person)
+    photos = store.iter_photographs(status="complete", licences=licences, subject=subject, category=category)
     for ph in photos:
         if not ph.filename:
             continue
-        src = config.images_dir / ph.person_name / ph.filename
+        src = config.images_dir / ph.category / ph.subject / ph.filename
         if not src.exists():
-            logger.warning("export_source_missing", person=ph.person_name, filename=ph.filename)
+            logger.warning("export_source_missing", subject=ph.subject, filename=ph.filename)
             result.missing += 1
             continue
-        dst = dest_root / ph.person_name / ph.filename
+        dst = dest_root / ph.category / ph.subject / ph.filename
         try:
             _publish_one(src, dst, mode)
             result.published += 1
-            result.people.add(ph.person_name)
+            result.subjects.add(f"{ph.category}/{ph.subject}")
         except Exception as exc:
             logger.warning("export_failed", filename=ph.filename, error=str(exc))
             result.skipped += 1
@@ -77,6 +78,6 @@ def export_tree(
         dest=str(dest_root),
         mode=mode,
         published=result.published,
-        people=len(result.people),
+        subjects=len(result.subjects),
     )
     return result

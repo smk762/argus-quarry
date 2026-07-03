@@ -1,0 +1,32 @@
+# Curated, deterministic IDENTITY seed (persons) for dev/QA.
+#
+# Kept intentionally SHORT for the walking skeleton — long enough to exercise
+# multi-subject harvesting and the on-disk category layout, short enough to stay
+# fast and licence-safe. Everyone here is long-deceased with abundant
+# public-domain portraits on Wikimedia Commons. Scale toward the 5–7k target
+# later via the optional Wikidata SPARQL harvester (Phase 2).
+#
+# Fields: name (required) · search · aliases · wikidata_id · birth_year · death_year · occupation
+category: identity
+subjects:
+  - name: Albert Einstein
+    wikidata_id: Q937
+    birth_year: 1879
+    death_year: 1955
+    occupation: physicist
+
+  - name: Marie Curie
+    wikidata_id: Q7186
+    birth_year: 1867
+    death_year: 1934
+    occupation: physicist
+    aliases:
+      - Maria Skłodowska-Curie
+
+  - name: Mark Twain
+    wikidata_id: Q7245
+    birth_year: 1835
+    death_year: 1910
+    occupation: author
+    aliases:
+      - Samuel Clemens

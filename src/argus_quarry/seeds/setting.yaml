@@ -1,0 +1,16 @@
+# Curated SETTING seed — scenes / environments for setting LoRA workflows.
+#
+# Subjects are places, not people. ``search`` steers the archive toward the
+# interior/exterior scene rather than incidental subjects.
+#
+# Fields: name (required) · search · aliases
+category: setting
+subjects:
+  - name: Japanese garden
+    search: Japanese garden photochrom
+
+  - name: Gothic cathedral interior
+    search: cathedral interior engraving
+
+  - name: Art Deco interior
+    search: Art Deco interior

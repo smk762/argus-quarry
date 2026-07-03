@@ -3,7 +3,7 @@ from __future__ import annotations
 from conftest import FakeNet
 
 from argus_quarry.downloaders.commons import API_URL, CommonsDownloader
-from argus_quarry.models import Person
+from argus_quarry.models import Subject
 
 
 def _canned_response() -> dict:
@@ -40,7 +40,7 @@ def _canned_response() -> dict:
 def test_commons_parses_imageinfo(config):
     net = FakeNet(json_by_url={API_URL: _canned_response()})
     dl = CommonsDownloader(config, net)
-    records = list(dl.harvest(Person(name="Albert Einstein", wikidata_id="Q937"), limit=10))
+    records = list(dl.harvest(Subject(name="Albert Einstein", wikidata_id="Q937"), limit=10))
 
     assert len(records) == 1
     r = records[0]
@@ -50,11 +50,21 @@ def test_commons_parses_imageinfo(config):
     assert r.licence == "Public domain"
     assert r.photographer == "Ferdinand Schmutzer"  # HTML stripped
     assert r.year == 1921
-    assert r.person_name == "Albert_Einstein"
+    assert r.subject == "Albert_Einstein"
+    assert r.category == "identity"
     assert r.wikidata_id == "Q937"
+
+
+def test_commons_non_identity_subject_sets_category(config):
+    net = FakeNet(json_by_url={API_URL: _canned_response()})
+    dl = CommonsDownloader(config, net)
+    records = list(dl.harvest(Subject(name="Red dress", category="wardrobe"), limit=10))
+    assert len(records) == 1
+    assert records[0].subject == "Red_dress"
+    assert records[0].category == "wardrobe"
 
 
 def test_commons_empty_response_yields_nothing(config):
     net = FakeNet(json_by_url={API_URL: {}})
     dl = CommonsDownloader(config, net)
-    assert list(dl.harvest(Person(name="Nobody"), limit=5)) == []
+    assert list(dl.harvest(Subject(name="Nobody"), limit=5)) == []

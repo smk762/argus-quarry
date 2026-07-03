@@ -5,11 +5,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/smk762/argus-quarry/actions/workflows/ci.yml/badge.svg)](https://github.com/smk762/argus-quarry/actions/workflows/ci.yml)
 
-**Provenance-first acquisition of public-domain / CC0 portraits** — the *input
+**Provenance-first acquisition of public-domain / CC0 images** — the *input
 stage* of the Argus suite. The quarry digs up raw material: it downloads images
 from upstream archives and lands them, **with full provenance and licensing**,
 into a folder the rest of the suite already consumes (`DATASET_DIR` →
 `/data/images`).
+
+Subjects are grouped into LoRA-training **categories** — `identity` (people),
+`wardrobe` (garments), `setting` (scenes/environments) and `concept`
+(styles/themes) — and everything lands sorted into `<category>/<subject>/`
+subfolders. A category is independent of identity: a subject can be *Mark Twain*,
+a *red dress*, a *modern kitchen*, or *cyberpunk*.
 
 It is deliberately lean — *acquisition + provenance, nothing more*. Quality
 scoring, near-duplicate detection, faces, embeddings and captioning are owned
@@ -20,7 +26,7 @@ them.
 > **Want a UI?** Quarry is CLI-only by design (see [DESIGN.md](DESIGN.md) §9).
 > The suite's web frontend — [**argus-vision-demo**](https://github.com/smk762/argus-vision-demo)
 > — surfaces the curation and captioning stages that consume quarry's output
-> (e.g. its `/curate` view scans the `Person_Name/` tree quarry publishes).
+> (e.g. its `/curate` view scans the `<category>/<subject>/` tree quarry publishes).
 
 ```
 argus-quarry (NEW)          argus-curator (:8101)        argus-lens (:8100)        argus-vision-demo
@@ -43,8 +49,11 @@ See [DESIGN.md](DESIGN.md) for the full rationale and phased plan.
 - **Bounded.** A per-file resolution/size cap and a total-archive GB budget keep
   the pool predictable; the full-resolution URL is always retained for later
   re-fetch.
-- **Source-independent.** Every downloader yields the same `PortraitRecord`, so
+- **Source-independent.** Every downloader yields the same `SourceRecord`, so
   the pipeline never learns which archive a file came from.
+- **Category-sorted.** Subjects carry a category (identity / wardrobe / setting /
+  concept) and land under `<category>/<subject>/`, so one pool serves every LoRA
+  workflow.
 
 ## Install
 
@@ -66,12 +75,15 @@ uv venv && uv pip install -e ".[dev,cli]"
 ## Quickstart
 
 ```bash
-# Inspect the curated people seed
-argus-quarry people
+# Inspect the curated subject seeds (all categories, or one)
+argus-quarry subjects
+argus-quarry subjects --category wardrobe
 
-# Fetch portraits from Wikimedia Commons into the raw pool, then publish
-# a curator-ready, CC0/PD-only tree into $DATASET_DIR (symlinks by default)
+# Fetch from Wikimedia Commons into the raw pool, then publish a curator-ready,
+# CC0/PD-only tree into $DATASET_DIR (symlinks by default). Omit --category to
+# harvest every category (identity + wardrobe + setting + concept).
 argus-quarry run --source commons --limit 20 --export --licence CC0,PD
+argus-quarry run --category concept --limit 20 --export   # just one category
 
 # Or split the two stages
 argus-quarry fetch --source commons --limit 20
@@ -79,7 +91,7 @@ argus-quarry export --dest ./data --licence CC0,PD   # add --copy to avoid symli
 
 # Inspect what you have
 argus-quarry stats
-argus-quarry list --licence CC0
+argus-quarry list --category setting --licence CC0
 argus-quarry verify              # re-check files decode + match recorded SHA256
 ```
 
@@ -92,11 +104,14 @@ argus-quarry verify              # re-check files decode + match recorded SHA256
 |---|---|
 | `run`    | Fetch into the raw pool, then (optionally) publish — the compose entrypoint |
 | `fetch`  | Download candidates into the raw pool (no publish) |
-| `export` | Publish a filtered `Person_Name/` tree into `DATASET_DIR` (symlink / `--copy`) |
-| `list`   | List landed photographs with provenance (filter by source / licence / person) |
-| `stats`  | Counts by status / source / licence + raw-pool size |
+| `export` | Publish a filtered `<category>/<subject>/` tree into `DATASET_DIR` (symlink / `--copy`) |
+| `list`   | List landed photographs with provenance (filter by source / licence / category / subject) |
+| `stats`  | Counts by status / category / source / licence + raw-pool size |
 | `verify` | Re-check landed files exist, decode, and match their recorded SHA256 |
-| `people` | Show the people seed downloaders harvest around |
+| `subjects` | Show the subject seed(s) downloaders harvest around (filter by `--category`) |
+
+`run`, `fetch`, `export` and `list` all accept `--category`
+(`identity` / `wardrobe` / `setting` / `concept`); with none given they span every category.
 
 ## Layout produced
 
@@ -104,21 +119,27 @@ Quarry fetches into a **raw pool** it fully owns (`$QUARRY_HOME`, a sibling
 side-car dir), then `export` publishes a clean tree into `DATASET_DIR`:
 
 ```
-$QUARRY_HOME/                    # side-car state — NEVER scanned by curator
-├── images/Albert_Einstein/…     # the raw pool (every byte quarry landed)
-├── metadata/portraits.sqlite    # provenance DB (people + photographs)
+$QUARRY_HOME/                          # side-car state — NEVER scanned by curator
+├── images/
+│   ├── identity/Albert_Einstein/…      # the raw pool, sorted by <category>/<subject>/
+│   ├── wardrobe/Red_dress/…
+│   ├── setting/Modern_kitchen/…
+│   └── concept/Cyberpunk/…
+├── metadata/portraits.sqlite          # provenance DB (subjects + photographs)
 ├── cache/  logs/
 
-$DATASET_DIR/                    # published, curator-ready view (via export)
-└── Albert_Einstein/…            # symlinks (default) or copies into the pool
+$DATASET_DIR/                          # published, curator-ready view (via export)
+├── identity/Albert_Einstein/…          # symlinks (default) or copies into the pool
+└── wardrobe/Red_dress/…
 ```
 
 ## Provenance model
 
 A single SQLite database (`portraits.sqlite`, WAL mode) with two tables:
 
-- **`people`** — `name · wikidata_id · birth_year · death_year · occupation`
-- **`photographs`** — `title · photographer · year · source · source_url ·
+- **`subjects`** — `name · category · wikidata_id · birth_year · death_year · occupation`
+  (the identity-only columns stay `NULL` for wardrobe / setting / concept subjects)
+- **`photographs`** — `category · title · photographer · year · source · source_url ·
   licence · attribution · width · height · file_size · filename ·
   **sha256 (UNIQUE)** · phash · remote_url · status · downloaded_at`
 

@@ -1,0 +1,16 @@
+# Curated CONCEPT seed — styles / themes / objects for concept LoRA workflows.
+#
+# Subjects are visual concepts, not people. These are chosen to be richly
+# public-domain on Wikimedia Commons (art movements, natural phenomena, machines).
+#
+# Fields: name (required) · search · aliases
+category: concept
+subjects:
+  - name: Art Nouveau
+    search: Art Nouveau poster illustration
+
+  - name: Steam locomotive
+    search: steam locomotive train
+
+  - name: Aurora borealis
+    search: aurora borealis northern lights
