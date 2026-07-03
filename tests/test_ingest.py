@@ -13,7 +13,7 @@ def test_ingest_lands_and_is_idempotent(config):
         engine = IngestEngine(config, store, net)
         out = engine.ingest_record(make_record(url))
         assert out.status == "complete"
-        landed = config.images_dir / "Albert_Einstein" / out.filename
+        landed = config.images_dir / "identity" / "Albert_Einstein" / out.filename
         assert landed.exists()
         assert store.total_bytes() == out.file_size
 
@@ -33,8 +33,22 @@ def test_exact_duplicate_bytes_are_deduped(config):
         dup = engine.ingest_record(make_record(b))
         assert dup.status == "duplicate"
         # Only one file physically landed.
-        files = list((config.images_dir / "Albert_Einstein").glob("*"))
+        files = list((config.images_dir / "identity" / "Albert_Einstein").glob("*"))
         assert len(files) == 1
+
+
+def test_non_identity_lands_under_category_subfolder(config):
+    url = "https://img/red_dress.jpg"
+    net = FakeNet(assets={url: make_image_bytes(seed=11)})
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, net)
+        out = engine.ingest_record(make_record(url, subject="Red_dress", category="wardrobe"))
+        assert out.status == "complete"
+        landed = config.images_dir / "wardrobe" / "Red_dress" / out.filename
+        assert landed.exists()
+        row = store.get_by_remote_url(url)
+        assert row.category == "wardrobe"
+        assert row.subject == "Red_dress"
 
 
 def test_non_free_licence_is_quarantined(config):

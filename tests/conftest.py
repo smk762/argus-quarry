@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from argus_quarry.config import QuarryConfig
-from argus_quarry.models import PortraitRecord
+from argus_quarry.models import SourceRecord
 
 
 def make_image_bytes(size: int = 256, seed: int = 0, fmt: str = "JPEG") -> bytes:
@@ -57,13 +57,15 @@ def config(tmp_path: Path) -> QuarryConfig:
 def make_record(
     remote_url: str,
     *,
-    person: str = "Albert_Einstein",
+    subject: str = "Albert_Einstein",
+    category: str = "identity",
     licence: str = "Public domain",
     year: int | None = 1921,
     source: str = "commons",
-) -> PortraitRecord:
-    return PortraitRecord(
-        person_name=person,
+) -> SourceRecord:
+    return SourceRecord(
+        subject=subject,
+        category=category,
         title="A portrait",
         photographer="Someone",
         year=year,

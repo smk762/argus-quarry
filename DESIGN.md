@@ -4,9 +4,15 @@
 > Owner: smk762 · Suite: Argus · Sibling of `argus-lens`, `argus-curator`, `argus-vision-demo`.
 
 The *quarry* is where the suite digs up raw material. `argus-quarry` acquires
-public-domain / CC0 portrait images from upstream archives and lands them —
-**with full provenance and licensing** — into a folder the rest of the Argus
-suite already knows how to consume (`DATASET_DIR` → `/data/images`).
+public-domain / CC0 images from upstream archives and lands them — **with full
+provenance and licensing** — into a folder the rest of the Argus suite already
+knows how to consume (`DATASET_DIR` → `/data/images`).
+
+Subjects are grouped into LoRA-training **categories** — `identity` (people),
+`wardrobe` (garments), `setting` (scenes/environments) and `concept`
+(styles/themes) — and land sorted into `<category>/<subject>/` subfolders. A
+category is independent of identity: a subject can be a person, a garment, a
+scene, or a visual concept.
 
 It is deliberately **lean**: an *acquisition + provenance* tool, nothing more.
 Everything downstream (quality scoring, near-dup, faces, embeddings, selection,
@@ -42,8 +48,9 @@ the exact loosely-coupled pattern the suite already uses.
   attribution. This is the reason the tool exists ("provenance-first").
 - **Resumable, rate-limited, retrying downloads** with integrity verification.
 - **Exact dedup at ingest** — SHA256 only. Skip bytes we already have.
-- **Provenance database** — SQLite: `people` + `photographs`.
-- **A thin folder layout** that lands cleanly as `DATASET_DIR`.
+- **Provenance database** — SQLite: `subjects` + `photographs`.
+- **Category-aware subject seeds** (identity / wardrobe / setting / concept).
+- **A thin, category-sorted folder layout** that lands cleanly as `DATASET_DIR`.
 
 ### Out of scope (delegated — do NOT rebuild)
 
@@ -59,7 +66,7 @@ the exact loosely-coupled pattern the suite already uses.
 
 **Net effect vs. the original brief:** the `quality` table and all CV
 (quality/faces/embeddings) sections are dropped from quarry. The DB shrinks to
-`people` + `photographs`. `phash` is optional metadata only (recorded if cheap,
+`subjects` + `photographs`. `phash` is optional metadata only (recorded if cheap,
 never the basis of quarry's dedup — SHA256 is). Search is provenance/licence
 oriented, not quality/ranking oriented.
 
@@ -78,18 +85,21 @@ argus-quarry/
 ├── src/argus_quarry/
 │   ├── __init__.py           # exports + __version__
 │   ├── py.typed
-│   ├── models.py             # PortraitRecord, Person, Photograph (pydantic)
+│   ├── models.py             # SourceRecord, Subject, Photograph (pydantic)
 │   ├── store.py              # SQLite provenance DB (sqlite3 stdlib, WAL)
 │   ├── ingest.py             # download → verify → SHA256 dedup → land → record
 │   ├── net.py                # httpx client: rate limit, retry/backoff, resume
 │   ├── config.py             # QuarryConfig: per-source settings, resolution + total-GB caps
-│   ├── people.py             # load seed list; optional Wikidata SPARQL harvester
-│   ├── cli.py                # typer app: run / fetch / export / list / stats / verify / people
+│   ├── subjects.py           # load per-category seed lists; optional Wikidata SPARQL harvester
+│   ├── cli.py                # typer app: run / fetch / export / list / stats / verify / subjects
 │   ├── seeds/
-│   │   └── people.yaml       # curated deterministic seed (name, wikidata_id, aliases)
+│   │   ├── identity.yaml     # curated persons seed (name, wikidata_id, aliases)
+│   │   ├── wardrobe.yaml     # garments / outfits
+│   │   ├── setting.yaml      # scenes / environments
+│   │   └── concept.yaml      # styles / themes / objects
 │   ├── downloaders/
 │   │   ├── __init__.py       # registry (name -> Downloader)
-│   │   ├── base.py           # Downloader protocol / ABC -> yields PortraitRecord
+│   │   ├── base.py           # Downloader protocol / ABC -> yields SourceRecord
 │   │   ├── commons.py        # Wikimedia Commons        (Phase 1)
 │   │   ├── loc.py            # Library of Congress       (Phase 2)
 │   │   ├── smithsonian.py    # Smithsonian Open Access   (Phase 2)
@@ -107,15 +117,18 @@ identical toolchain to curator so the suite stays consistent.
 
 ---
 
-## 4. The common contract: `PortraitRecord`
+## 4. The common contract: `SourceRecord`
 
 Every downloader is source-independent because it yields the same object. The
 rest of the pipeline never learns which archive a file came from.
 
 ```python
-class PortraitRecord(BaseModel):
-    # identity / subject
-    person_name: str                 # canonical folder name, e.g. "Albert_Einstein"
+class SourceRecord(BaseModel):
+    # subject / category
+    subject: str                     # canonical folder name, e.g. "Albert_Einstein" | "Red_dress"
+    category: str = "identity"       # identity | wardrobe | setting | concept
+
+    # identity-only metadata (None for non-person subjects)
     wikidata_id: str | None = None
     birth_year: int | None = None
     death_year: int | None = None
@@ -134,24 +147,30 @@ class PortraitRecord(BaseModel):
     attribution: str | None = None   # required credit line if any
 ```
 
-`Downloader.harvest(query) -> Iterator[PortraitRecord]` streams candidates;
-`ingest.py` turns each into bytes on disk + a DB row (idempotently).
+`Downloader.harvest(subject) -> Iterator[SourceRecord]` streams candidates
+(searching with `subject.query`, stamping each record's category);
+`ingest.py` turns each into bytes on disk + a DB row (idempotently), landing
+under `<category>/<subject>/`. (`PortraitRecord` / `Person` remain importable as
+backward-compatible aliases of `SourceRecord` / `Subject`.)
 
-### The people seed (Q2, resolved: hybrid)
+### The subject seeds (Q2, resolved: hybrid + per-category)
 
-The subject list is decoupled from the downloaders. `people.py` supplies the
-names/`wikidata_id`s each downloader harvests around, from two interchangeable
-sources:
+The subject list is decoupled from the downloaders. `subjects.py` supplies the
+subjects each downloader harvests around, one curated YAML per category, from
+two interchangeable sources:
 
-- **Curated seed (default, deterministic):** `seeds/people.yaml` — a small,
-  hand-maintained list (name, `wikidata_id`, aliases, optional birth/death).
-  This is what dev/QA runs against so results are reproducible and licence-safe.
-- **Wikidata SPARQL harvester (optional, `--from-wikidata`):** query "humans
-  with a Commons portrait" (+ filters like occupation / death-year for PD
-  likelihood) to scale toward the 5–7k target. Cached under `QUARRY_HOME/cache`.
+- **Curated seeds (default, deterministic):** `seeds/<category>.yaml` — small,
+  hand-maintained lists (`name`, optional `search`, `aliases`; plus
+  `wikidata_id` / birth / death for `identity`). This is what dev/QA runs against
+  so results are reproducible and licence-safe. `load_subjects()` merges all
+  categories; `--category` restricts to one.
+- **Wikidata SPARQL harvester (optional, `--from-wikidata`, identity only):**
+  query "humans with a Commons portrait" (+ filters like occupation / death-year
+  for PD likelihood) to scale toward the 5–7k target. Cached under
+  `QUARRY_HOME/cache`.
 
-Both resolve to the same `Person` shape, so downloaders never care which was
-used. Seed ships in Phase 1; SPARQL harvester lands in Phase 2.
+Both resolve to the same `Subject` shape, so downloaders never care which was
+used. Seeds ship in Phase 1; SPARQL harvester lands in Phase 2.
 
 ---
 
@@ -159,11 +178,12 @@ used. Seed ships in Phase 1; SPARQL harvester lands in Phase 2.
 
 Two tables. Provenance-first; no CV columns.
 
-**people**
-`id · name · wikidata_id · birth_year · death_year · occupation`
+**subjects**
+`id · name · category · wikidata_id · birth_year · death_year · occupation`
+(unique on `(name, category)`; identity-only columns are `NULL` elsewhere)
 
 **photographs**
-`id · person_id (fk) · title · photographer · year · source · source_url ·
+`id · subject_id (fk) · category · title · photographer · year · source · source_url ·
 licence · attribution · width · height · file_size · filename · sha256 (unique) ·
 phash (nullable, informational) · remote_url · status · downloaded_at`
 
@@ -183,21 +203,24 @@ Two-stage layout: quarry fetches into a **raw pool** it fully owns, then
 `export` publishes a clean, curator-ready tree into `DATASET_DIR`.
 
 ```
-$QUARRY_HOME/                 # sibling ./quarry — side-car state, NEVER scanned
-├── images/                   # the RAW POOL — every byte quarry has landed
-│   ├── Albert_Einstein/
-│   │   ├── einstein_1921_commons_<sha8>.jpg
-│   │   └── ...
-│   └── ...
+$QUARRY_HOME/                     # sibling ./quarry — side-car state, NEVER scanned
+├── images/                       # the RAW POOL — every byte quarry has landed
+│   ├── identity/
+│   │   └── Albert_Einstein/
+│   │       ├── albert_einstein_1921_commons_<sha8>.jpg
+│   │       └── ...
+│   ├── wardrobe/Red_dress/...
+│   ├── setting/Modern_kitchen/...
+│   └── concept/Cyberpunk/...
 ├── metadata/portraits.sqlite
-├── cache/                    # HTTP cache / partial downloads (resume)
+├── cache/                        # HTTP cache / partial downloads (resume)
 ├── logs/
-└── thumbnails/               # OPTIONAL; curator makes its own previews
+└── thumbnails/                   # OPTIONAL; curator makes its own previews
 
-$DATASET_DIR/                 # == /data/images — PUBLISHED view (via `export`)
-├── Albert_Einstein/          # symlinks (default) or copies into the pool
-│   └── einstein_1921_commons_<sha8>.jpg -> $QUARRY_HOME/images/...
-├── Winston_Churchill/
+$DATASET_DIR/                     # == /data/images — PUBLISHED view (via `export`)
+├── identity/Albert_Einstein/     # symlinks (default) or copies into the pool
+│   └── albert_einstein_1921_commons_<sha8>.jpg -> $QUARRY_HOME/images/...
+├── wardrobe/Red_dress/...
 └── ...
 ```
 
@@ -206,7 +229,7 @@ Key decisions (Q4 + Q5, resolved):
 - **`QUARRY_HOME` is a sibling `./quarry` dir**, fully outside the image tree, so
   the DB/cache/logs a curator scan would choke on are never in view.
 - **Images land in the raw pool first**, then `argus-quarry export` builds the
-  `Person_Name/` tree in `DATASET_DIR` — **symlink by default** (cheap, no
+  `<category>/<subject>/` tree in `DATASET_DIR` — **symlink by default** (cheap, no
   duplication), `--copy` when a mount can't cross the boundary. This keeps
   quarry's provenance-complete pool separate from the curated view: you can
   re-publish a subset (e.g. only `licence = CC0`) without re-downloading, and a
@@ -239,7 +262,7 @@ Each source module must:
   next file would exceed the ceiling, **stop the run cleanly** — mark remaining
   candidates `pending` (resumable later if the cap is raised), log a
   `budget_reached` event, and exit non-error. This bounds disk use predictably
-  for dev/QA regardless of how many sources/people are queued.
+  for dev/QA regardless of how many sources/subjects are queued.
 - **Log all failures** (structlog → `logs/`), never crash the whole run.
 
 Everything is **idempotent**: rerunning `fetch` resumes/repairs, never duplicates.
@@ -299,7 +322,7 @@ Next.js frontend, so:
 - **Phase 1–2:** no standalone UI. `argus-quarry stats` / `list` on the CLI is
   enough to inspect provenance.
 - **Later (optional):** a tiny read-only FastAPI `server/` exposing provenance
-  queries (by person / photographer / year / source / licence), which the demo
+  queries (by subject / category / photographer / year / source / licence), which the demo
   frontend could surface as a `/gallery` route — consistent with how `/curate`
   already talks to curator. Not built until there's demand.
 
@@ -323,10 +346,11 @@ This keeps us to one real UI (the demo) instead of maintaining a second.
 
 ## 11. Design principles (unchanged from the brief, enforced by the above)
 
-Modular · source-independent (`PortraitRecord`) · idempotent (SHA256 + `status`)
-· extensible (downloader registry) · reproducible · **provenance-first** (a
-record with no licence never lands) · optimised as the *input* to the suite's
-existing CV/search/curation stages rather than duplicating them.
+Modular · source-independent (`SourceRecord`) · idempotent (SHA256 + `status`)
+· extensible (downloader registry) · category-sorted (identity / wardrobe /
+setting / concept) · reproducible · **provenance-first** (a record with no
+licence never lands) · optimised as the *input* to the suite's existing
+CV/search/curation stages rather than duplicating them.
 
 ---
 
@@ -334,17 +358,17 @@ existing CV/search/curation stages rather than duplicating them.
 
 **Phase 1 — walking skeleton**
 - `pyproject.toml` (extras: `cli`, `server`, `dev`), `Makefile`, `Dockerfile`.
-- `models.PortraitRecord`, `store` (SQLite `people`+`photographs`, WAL, migrations).
-- `net` (rate limit + retry + resume), `ingest` (download→verify→cap→SHA256→pool→record).
-- `people.py` + `seeds/people.yaml` curated seed loader.
+- `models.SourceRecord`, `store` (SQLite `subjects`+`photographs`, WAL, migrations).
+- `net` (rate limit + retry + resume), `ingest` (download→verify→cap→SHA256→pool→record, `<category>/<subject>/`).
+- `subjects.py` + per-category `seeds/*.yaml` (identity / wardrobe / setting / concept) curated loaders.
 - `downloaders/commons.py` (Wikimedia Commons).
-- `export` (symlink/`--copy` published tree, with `--licence` filter).
-- Typer CLI: `run` (fetch+export), `fetch`, `export`, `list`, `stats`, `verify`.
+- `export` (symlink/`--copy` published tree, with `--licence` / `--category` filters).
+- Typer CLI: `run` (fetch+export), `fetch`, `export`, `list`, `stats`, `verify`, `subjects`.
 - `gallery` compose profile wired into `argus-vision-demo/compose.yaml`.
 
 **Phase 2 — breadth**
 - `loc`, `smithsonian`, `rijksmuseum`, curated `lac` (Karsh allow-list) downloaders.
-- Wikidata SPARQL people harvester (`people --from-wikidata`); incremental update mode.
+- Wikidata SPARQL identity harvester (`subjects --category identity --from-wikidata`); incremental update mode.
 - Opportunistic `phash` metadata (informational only).
 
 **Phase 3 — polish (optional)**
@@ -357,17 +381,22 @@ existing CV/search/curation stages rather than duplicating them.
 
 1. **Name** — `argus-quarry` (acquisition connotation, no clash with the
    frontend's "viewing"). ✅
-2. **People list** — **hybrid**: curated `seeds/people.yaml` for deterministic
-   dev/QA (Phase 1), plus an optional Wikidata SPARQL harvester to scale toward
-   5–7k (Phase 2). See §4. ✅
+2. **Subject list** — **hybrid + per-category**: curated `seeds/<category>.yaml`
+   (identity / wardrobe / setting / concept) for deterministic dev/QA (Phase 1),
+   plus an optional Wikidata SPARQL harvester (identity) to scale toward 5–7k
+   (Phase 2). See §4. ✅
 3. **Resolution** — **configurable per-file cap** (~12 MP / few MB default),
    full-res `remote_url` retained for on-demand re-fetch; overridable per run.
    Keeps the 20–40 GB budget without discarding fidelity. See §7. ✅
 4. **`QUARRY_HOME`** — sibling **`./quarry`** dir, fully outside the image tree.
    See §6. ✅
 5. **Landing** — **raw pool + export**: fetch into `QUARRY_HOME/images`, then
-   `export` publishes a `Person_Name/` tree into `DATASET_DIR` (symlink default,
-   `--copy` fallback), with an optional `--licence` filter. See §6/§8. ✅
+   `export` publishes a `<category>/<subject>/` tree into `DATASET_DIR` (symlink
+   default, `--copy` fallback), with optional `--licence` / `--category` filters.
+   See §6/§8. ✅
+6. **Categories** — subjects are grouped into identity / wardrobe / setting /
+   concept and land in `<category>/<subject>/` subfolders, so one pool serves
+   multiple LoRA-training workflows. See §4/§6. ✅
 
 ### Follow-ups that surfaced while resolving
 

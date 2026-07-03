@@ -1,0 +1,19 @@
+# Curated WARDROBE seed — garments / outfits for wardrobe LoRA workflows.
+#
+# Subjects are things, not people. ``search`` tunes the archive query where the
+# bare name is too broad. Historical dress is abundantly public-domain on
+# Wikimedia Commons (museum collections, fashion plates, ukiyo-e).
+#
+# Fields: name (required) · search · aliases
+category: wardrobe
+subjects:
+  - name: Kimono
+    search: kimono woodblock print ukiyo-e
+    aliases:
+      - furisode
+
+  - name: Victorian dress
+    search: Victorian fashion plate 1800s
+
+  - name: Military uniform
+    search: military uniform 19th century plate
