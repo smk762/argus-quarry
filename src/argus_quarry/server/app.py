@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,7 @@ from PIL import Image
 from argus_quarry import __version__
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import Photograph
-from argus_quarry.store import ProvenanceStore
+from argus_quarry.store import ProvenanceStore, ProvenanceUnavailable, has_wal_content
 
 logger = structlog.get_logger()
 
@@ -79,6 +80,44 @@ def _split_csv(value: str | None) -> list[str] | None:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+_UNAVAILABLE = "provenance database unavailable"
+
+
+def _make_opener(db_path: Path):
+    """Build the per-request store opener, remembering the mode that worked.
+
+    The mount's writability cannot change while the process lives, so resolving
+    it once spares every later request the failed connects. The *connection* is
+    still per-request, which is what keeps a concurrent ``fetch`` visible.
+
+    An ``immutable`` mode is re-validated against the WAL on each use: it is only
+    safe while no ``-wal`` exists, and a `fetch` can create one at any time.
+    """
+    cached: dict[str, str] = {}
+
+    def _open() -> ProvenanceStore:
+        mode = cached.get("mode")
+        if mode == "read_only" or (mode == "immutable" and not has_wal_content(db_path)):
+            try:
+                return ProvenanceStore(db_path, **{mode: True})
+            except (OSError, sqlite3.Error):
+                cached.pop("mode", None)  # mount changed under us; re-resolve below
+        try:
+            store = ProvenanceStore.open_readable(db_path)
+        except FileNotFoundError as exc:
+            logger.error("provenance_db_missing", db=str(db_path), error=str(exc))
+            raise HTTPException(status_code=503, detail=_UNAVAILABLE) from exc
+        except ProvenanceUnavailable as exc:
+            logger.error("provenance_db_unavailable", db=str(db_path), error=str(exc))
+            raise HTTPException(status_code=503, detail=_UNAVAILABLE) from exc
+        if cached.get("mode") != store.open_mode:
+            logger.info("provenance_db_opened", db=str(db_path), mode=store.open_mode)
+        cached["mode"] = store.open_mode
+        return store
+
+    return _open
+
+
 def create_app(
     cors: bool = False,
     cors_origins: list[str] | None = None,
@@ -103,26 +142,43 @@ def create_app(
         app.add_middleware(
             CORSMiddleware,
             allow_origins=cors_origins or ["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
+            # Credentials only make sense for an explicit origin list. With the
+            # "*" default Starlette reflects whatever Origin is presented, which
+            # would let any site read the API with the caller's cookies.
+            allow_credentials=bool(cors_origins),
+            allow_methods=["GET", "HEAD"],  # the whole surface is read-only
             allow_headers=["*"],
         )
 
     logger.info("server_ready", quarry_home=str(config.home), db=str(config.db_path))
+    _open_store = _make_opener(config.db_path)
 
     @app.get("/health")
-    async def health() -> dict[str, Any]:
+    async def health(response: Response) -> dict[str, Any]:
+        """Readiness, not just liveness: a process that cannot open the pool is not serving."""
+
+        def _probe() -> str | None:
+            try:
+                with _open_store():
+                    return None
+            except HTTPException as exc:
+                return str(exc.detail)
+
+        detail = await asyncio.to_thread(_probe)
+        if detail is not None:
+            response.status_code = 503
         return {
-            "status": "ok",
+            "status": "ok" if detail is None else "degraded",
             "service": "argus-quarry",
             "version": __version__,
             "quarry_home": str(config.home.resolve()),
+            "database": "ok" if detail is None else detail,
         }
 
     @app.get("/stats")
     async def stats() -> dict[str, Any]:
         def _stats() -> dict[str, Any]:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store() as store:
                 return store.stats()
 
         return await asyncio.to_thread(_stats)
@@ -132,7 +188,7 @@ def create_app(
         category: str | None = Query(None, description="only this category (identity/wardrobe/setting/concept)"),
     ) -> dict[str, Any]:
         def _subjects() -> dict[str, Any]:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store() as store:
                 return {"subjects": store.subjects_with_counts(category=category)}
 
         return await asyncio.to_thread(_subjects)
@@ -157,7 +213,7 @@ def create_app(
                 "subject": subject,
                 "category": category,
             }
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store() as store:
                 total = store.count_photographs(**filters)
                 rows = store.iter_photographs(**filters, limit=limit, offset=offset)
             return {
@@ -172,7 +228,7 @@ def create_app(
     @app.get("/photos/{photo_id}")
     async def photo(photo_id: int) -> dict[str, Any]:
         def _get() -> Photograph | None:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store() as store:
                 return store.get_photograph(photo_id)
 
         ph = await asyncio.to_thread(_get)
@@ -188,7 +244,7 @@ def create_app(
         size = min(size, THUMB_MAX)
 
         def _get() -> Photograph | None:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store() as store:
                 return store.get_photograph(id)
 
         ph = await asyncio.to_thread(_get)

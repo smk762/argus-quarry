@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
+import os
+import stat
 from pathlib import Path
 
 import numpy as np
@@ -75,3 +78,36 @@ def make_record(
         licence=licence,
         attribution="Someone",
     )
+
+
+@pytest.fixture
+def read_only_dir():
+    """Make a tree read-only for the test, restoring modes on teardown.
+
+    Stands in for a `:ro` bind mount (issue #5), so it must deny writes to
+    *files* as well as directories — dirs at 0o555 alone still let an existing
+    file be rewritten in place, which a real read-only mount refuses with EROFS.
+    Root ignores the mode bits, so tests that need it skip there rather than
+    passing vacuously.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses permissions; cannot fake a read-only mount")
+
+    restore: list[tuple[Path, int]] = []
+
+    def _apply(root: Path) -> Path:
+        # Files first: once a directory is 0o555 its entries can still be
+        # chmod'ed by their owner, but collect modes before anything changes.
+        for path in [root, *root.rglob("*")]:
+            restore.append((path, stat.S_IMODE(path.stat().st_mode)))
+        for path, _ in restore:
+            path.chmod(0o555 if path.is_dir() else 0o444)
+        return root
+
+    yield _apply
+
+    # Restore deepest-first so a parent is never re-locked before its children,
+    # and never let one failure strand the rest of the tree as undeletable.
+    for path, mode in reversed(restore):
+        with contextlib.suppress(OSError):  # the test may have removed it
+            path.chmod(mode)

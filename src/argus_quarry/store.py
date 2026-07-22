@@ -16,6 +16,18 @@ from pathlib import Path
 
 from argus_quarry.models import DEFAULT_CATEGORY, Photograph, Subject, normalise_category
 
+
+class ProvenanceUnavailable(RuntimeError):
+    """The provenance DB is present but cannot be served read-only.
+
+    Raised by :meth:`ProvenanceStore.open_readable` when no read-only open mode
+    can return trustworthy data — an unmigrated/corrupt schema, or a read-only
+    mount carrying an un-checkpointed WAL that ``immutable=1`` would silently
+    read past. Callers should surface this as "unavailable", never as an empty
+    or partial result.
+    """
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS subjects (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,17 +75,113 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def has_wal_content(db_path: Path) -> bool:
+    """True if a non-empty ``-wal`` sits beside the DB (commits an immutable open would miss)."""
+    try:
+        return db_path.with_name(db_path.name + "-wal").stat().st_size > 0
+    except OSError:
+        return False
+
+
 class ProvenanceStore:
     """Thin wrapper around the SQLite provenance DB."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, read_only: bool = False, immutable: bool = False) -> None:
+        """Open the provenance DB.
+
+        Default is read-write: create the pool dir if needed, then migrate.
+
+        ``read_only`` opens an existing DB through a ``mode=ro`` URI and skips
+        both the ``mkdir`` and the migration, so a pool mounted ``:ro`` can be
+        served (issue #5). ``mode=ro`` still reads a live WAL correctly, but
+        SQLite must create the ``-shm`` sidecar to do so, which a read-only
+        *directory* denies. ``immutable`` promises the file never changes, which
+        needs no sidecars — but it therefore IGNORES any ``-wal``, so it is only
+        safe when there is none. Prefer :meth:`open_readable`, which picks
+        between the two and refuses to read past a WAL it cannot see.
+        """
         self.db_path = Path(db_path)
+        self.read_only = read_only or immutable
+        self.open_mode = "immutable" if immutable else "read_only" if read_only else "read_write"
+        if self.read_only:
+            if not self.db_path.is_file():
+                raise FileNotFoundError(f"no provenance database at {self.db_path}")
+            uri = self.db_path.resolve().as_uri() + "?mode=ro"
+            if immutable:
+                uri += "&immutable=1"
+            self._conn = sqlite3.connect(uri, uri=True)
+            self._conn.row_factory = sqlite3.Row
+            self._probe()
+            return
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path))
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._migrate()
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            # _migrate() reads and writes the file, so it doubles as the probe
+            # that a lazy connect() to an unusable DB has not deferred its
+            # failure into the first request.
+            self._migrate()
+        except Exception:
+            self._conn.close()
+            raise
+
+    def _probe(self) -> None:
+        """Fail fast if this connection cannot serve the queries callers make.
+
+        ``connect()`` is lazy, and a read-only open skips :meth:`_migrate`, so
+        neither the connection nor the schema is proven until something reads.
+        Touching ``sqlite_master`` alone is not enough — it succeeds on a
+        legacy, half-migrated, or zero-byte DB whose first real query then dies
+        mid-request. Exercise the join and columns every query depends on, so an
+        unusable pool is rejected at open time and the caller can report it as
+        unavailable. Closes itself before re-raising so the caller can fall back
+        to a stricter open mode.
+        """
+        try:
+            self._conn.execute(
+                "SELECT ph.id, ph.category, sub.name FROM photographs ph "
+                "JOIN subjects sub ON sub.id = ph.subject_id LIMIT 1"
+            ).fetchone()
+        except Exception:
+            self._conn.close()
+            raise
+
+    @classmethod
+    def open_readable(cls, db_path: str | Path) -> ProvenanceStore:
+        """Open the DB for reading without writing anything into the pool.
+
+        The read path must never create, migrate, or relocate — those belong to
+        ``fetch`` (DESIGN.md section 9: no mutation). So this never falls back to
+        a read-write open, and a missing DB is an error rather than a new empty
+        pool.
+
+        Tries ``mode=ro`` first because it sees a concurrent ``fetch``'s WAL.
+        Only if that fails (a read-only *directory*, where the ``-shm`` cannot be
+        created) does it use ``immutable=1`` — and never while a non-empty
+        ``-wal`` exists, since immutable would silently serve the pre-WAL file.
+
+        Raises ``FileNotFoundError`` if there is no DB, or
+        :class:`ProvenanceUnavailable` if one exists but cannot be read safely.
+        """
+        path = Path(db_path)
+        try:
+            return cls(path, read_only=True)
+        except FileNotFoundError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            ro_error: Exception = exc
+
+        if has_wal_content(path):
+            raise ProvenanceUnavailable(
+                f"{path} has an un-checkpointed WAL that cannot be read from a read-only mount; "
+                "checkpoint it, or mount the pool directory writable"
+            ) from ro_error
+        try:
+            return cls(path, immutable=True)
+        except (OSError, sqlite3.Error) as exc:
+            raise ProvenanceUnavailable(f"cannot open provenance database at {path}: {exc}") from exc
 
     # ── schema / migration ──────────────────────────────────────────
     def _table_exists(self, name: str) -> bool:
