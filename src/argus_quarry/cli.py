@@ -31,6 +31,22 @@ def _split_csv(value: str | None) -> list[str] | None:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+def _open_reader(config):
+    """Open the pool for a read-only command, tolerating a `:ro` $QUARRY_HOME.
+
+    `list`/`stats`/`export`/`verify` never write, so they must not fail just
+    because the pool is mounted read-only (issue #5). Falls back to a normal
+    read-write open when no read-only mode works, which keeps the fresh-pool
+    behaviour (an absent DB is created and reported as empty).
+    """
+    from argus_quarry.store import ProvenanceStore, ProvenanceUnavailable
+
+    try:
+        return ProvenanceStore.open_readable(config.db_path)
+    except (OSError, ProvenanceUnavailable):
+        return ProvenanceStore(config.db_path)
+
+
 def _harvest_records(config, net, sources: list[str], subjects, per_subject_limit: int):
     """Flatten (source x subject) harvests into one SourceRecord stream."""
     from argus_quarry.downloaders import get_downloader
@@ -130,10 +146,9 @@ def list_cmd(
 ) -> None:
     """List landed photographs with provenance."""
     from argus_quarry.config import QuarryConfig
-    from argus_quarry.store import ProvenanceStore
 
     config = QuarryConfig.from_env()
-    with ProvenanceStore(config.db_path) as store:
+    with _open_reader(config) as store:
         photos = store.iter_photographs(
             status=status, source=source, licences=_split_csv(licence), subject=subject, category=category
         )
@@ -150,10 +165,9 @@ def list_cmd(
 def stats() -> None:
     """Summarise the provenance DB: counts by status/category/source/licence + pool size."""
     from argus_quarry.config import QuarryConfig
-    from argus_quarry.store import ProvenanceStore
 
     config = QuarryConfig.from_env()
-    with ProvenanceStore(config.db_path) as store:
+    with _open_reader(config) as store:
         s = store.stats()
 
     gb = s["total_bytes"] / (1024**3)
@@ -188,7 +202,9 @@ def verify(
 
     config = QuarryConfig.from_env()
     ok = missing = corrupt = mismatch = 0
-    with ProvenanceStore(config.db_path) as store:
+    # --repair writes, so it needs a read-write pool; a plain verify does not.
+    store_cm = ProvenanceStore(config.db_path) if repair else _open_reader(config)
+    with store_cm as store:
         for ph in store.iter_photographs(status="complete"):
             if not ph.filename:
                 continue
@@ -296,12 +312,11 @@ def _do_export(config, dest: Path | None, *, copy: bool, licences=None, subject=
     import os
 
     from argus_quarry.export import export_tree
-    from argus_quarry.store import ProvenanceStore
 
     if dest is None:
         dest = Path(os.environ.get("DATASET_DIR", "./data"))
     mode = "copy" if copy else "symlink"
-    with ProvenanceStore(config.db_path) as store:
+    with _open_reader(config) as store:
         result = export_tree(config, store, dest, mode=mode, licences=licences, subject=subject, category=category)
     typer.echo(
         f"Published {result.published} image(s) ({mode}) across {len(result.subjects)} "

@@ -186,22 +186,35 @@ overriding the command (`docker run ... ghcr.io/smk762/argus-quarry fetch …`).
 The pool root comes from `$QUARRY_HOME` (default `./quarry`), exactly like every
 other command — the compose service just sets `QUARRY_HOME=/data/quarry`.
 
-Serving is genuinely read-only, so an internet-facing deployment can mount the
-pool `:ro` and quarry opens the DB through a `mode=ro` (`immutable=1`) SQLite URI
-instead of creating its WAL sidecars:
+Serving never writes to the pool — on any mount. The DB is opened through a
+`mode=ro` SQLite URI, which still tracks a concurrently running `fetch` through
+the WAL; the server never creates, migrates or relocates anything, so pointing
+it at an empty or unmigrated pool reports `503` rather than quietly building one.
+That means the pool can be mounted `:ro`:
 
 ```bash
 docker run --rm -p 8102:8102 -v "$PWD/quarry:/data/quarry:ro" \
   -e QUARRY_HOME=/data/quarry ghcr.io/smk762/argus-quarry:latest
 ```
 
-The DB must already exist under that mount (nothing can be created), otherwise
-the data routes answer `503`. On a writable mount the server still opens
-read-write, so a concurrently running `fetch` stays visible through WAL.
+A read-only *directory* also stops SQLite creating the `-shm` sidecar `mode=ro`
+needs, so on that mount quarry falls back to `immutable=1`, which needs no
+sidecars. `immutable=1` cannot see a `-wal`, so it is used only when there is
+none: a pool snapshotted mid-write, or left behind by a killed `fetch`, answers
+`503` instead of silently serving stale counts. Checkpoint it
+(`sqlite3 portraits.sqlite 'PRAGMA wal_checkpoint(TRUNCATE)'`), or mount the pool
+writable, and it serves normally.
+
+The read-only CLI commands (`stats`, `list`, `export`, `verify` without
+`--repair`) open the pool the same way, so they work against a `:ro` mount too.
+
+`GET /health` is a readiness check, not just liveness: it opens the DB and
+answers `503` with `{"status": "degraded", "database": "..."}` when the pool
+cannot be served, so an orchestrator sheds a container that is up but useless.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /health` | `{status, service, version, quarry_home}` |
+| `GET /health` | `{status, service, version, quarry_home, database}` — `503` if the pool cannot be served |
 | `GET /stats` | Counts by status / category / source / licence + `total_bytes` (mirrors `stats`) |
 | `GET /subjects?category=` | Distinct subjects with landed photo counts: `{subjects: [{folder, category, photo_count}]}` |
 | `GET /photos?category=&subject=&licence=&source=&status=&limit=&offset=` | Paginated provenance rows: `{total, offset, limit, photos: […]}`; `status` defaults to `complete` (pass empty for all), `licence` accepts CSV (`CC0,PD`), `limit` ≤ 500 |

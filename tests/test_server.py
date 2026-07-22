@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import shutil
+import sqlite3
 
 import pytest
 
@@ -96,6 +98,7 @@ def test_health(config, client):
         "service": "argus-quarry",
         "version": body["version"],
         "quarry_home": str(config.home.resolve()),
+        "database": "ok",
     }
     assert isinstance(body["version"], str) and body["version"]
 
@@ -211,9 +214,19 @@ def test_no_mutation_endpoints(client):
         assert methods <= {"GET", "HEAD"}, f"{path} exposes {methods}"
 
 
+def _pool_fingerprint(home) -> dict[str, tuple]:
+    """Every path under the pool with its size+mtime, to prove nothing was touched."""
+    return {
+        str(p.relative_to(home)): (p.stat().st_size, p.stat().st_mtime_ns)
+        for p in sorted(home.rglob("*"))
+        if p.is_file()
+    }
+
+
 def test_serves_a_read_only_quarry_home(config, seeded, read_only_dir):
     """Issue #5: a `:ro` QUARRY_HOME must still answer every data route."""
     read_only_dir(config.home)
+    before = _pool_fingerprint(config.home)
     client = TestClient(create_app(home=config.home))
 
     assert client.get("/health").status_code == 200
@@ -222,8 +235,35 @@ def test_serves_a_read_only_quarry_home(config, seeded, read_only_dir):
     assert client.get("/photos").json()["total"] == 3
     assert client.get("/photos/{}".format(seeded["with_file"])).status_code == 200
     assert client.get("/thumb", params={"id": seeded["with_file"], "size": 64}).status_code == 200
-    # Nothing was created in the pool to answer them.
-    assert sorted(p.name for p in (config.home / "metadata").iterdir()) == ["portraits.sqlite"]
+    # Not one byte of the pool changed, and no sidecar appeared, to answer them.
+    assert _pool_fingerprint(config.home) == before
+
+
+def test_serving_never_opens_the_pool_read_write(config, seeded):
+    """The read path must never migrate or create, even where it *could* write."""
+    opened: list[str] = []
+    real_init = ProvenanceStore.__init__
+
+    def _spy(self, db_path, **kw):
+        real_init(self, db_path, **kw)
+        opened.append(self.open_mode)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(ProvenanceStore, "__init__", _spy)
+        client = TestClient(create_app(home=config.home))  # writable home
+        assert client.get("/stats").status_code == 200
+        assert client.get("/photos").status_code == 200
+
+    assert opened, "no store was opened"
+    assert "read_write" not in opened, f"read path opened read-write: {opened}"
+
+
+def test_writable_home_without_a_db_is_unavailable_and_creates_nothing(tmp_path):
+    """A typo'd QUARRY_HOME must 503, not silently materialise an empty pool."""
+    home = tmp_path / "typo"
+    resp = TestClient(create_app(home=home), raise_server_exceptions=False).get("/stats")
+    assert resp.status_code == 503
+    assert not home.exists()
 
 
 def test_read_only_home_without_a_db_is_unavailable(tmp_path, read_only_dir):
@@ -232,3 +272,47 @@ def test_read_only_home_without_a_db_is_unavailable(tmp_path, read_only_dir):
     read_only_dir(home)
     resp = TestClient(create_app(home=home), raise_server_exceptions=False).get("/stats")
     assert resp.status_code == 503
+    assert resp.json()["detail"] == "provenance database unavailable"  # no server paths leaked
+
+
+def test_read_only_home_with_a_hot_wal_is_unavailable_not_stale(config, tmp_path, read_only_dir):
+    """`immutable=1` cannot see a WAL, so serving stale counts is worse than 503."""
+    with ProvenanceStore(config.db_path) as store:
+        store.upsert_subject(Subject(name="Albert Einstein"))
+
+    # A commit left only in the -wal, as a SIGKILLed fetch or a live snapshot would.
+    conn = sqlite3.connect(config.db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    conn.execute("INSERT INTO subjects (name, category) VALUES ('Marie Curie', 'identity')")
+    conn.commit()
+    home = tmp_path / "snapshot"
+    (home / "metadata").mkdir(parents=True)
+    for name in ("portraits.sqlite", "portraits.sqlite-wal"):  # note: no -shm
+        shutil.copy2(config.db_path.parent / name, home / "metadata" / name)
+    conn.close()
+
+    assert (home / "metadata" / "portraits.sqlite-wal").stat().st_size > 0
+    read_only_dir(home)
+    config = config.model_copy(update={"home": home})
+
+    resp = TestClient(create_app(home=config.home), raise_server_exceptions=False).get("/stats")
+    assert resp.status_code == 503, f"served {resp.json()} past an unreadable WAL"
+
+
+def test_legacy_pool_served_read_only_is_unavailable_not_500(config, read_only_dir):
+    """An unmigrated pool cannot be migrated read-only, so it must 503, not 500."""
+    conn = sqlite3.connect(config.db_path)
+    conn.executescript(
+        "CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+        "CREATE TABLE photographs (id INTEGER PRIMARY KEY, person_id INTEGER, remote_url TEXT);"
+        "INSERT INTO people (name) VALUES ('Albert Einstein');"
+    )
+    conn.commit()
+    conn.close()
+    read_only_dir(config.home)
+
+    client = TestClient(create_app(home=config.home), raise_server_exceptions=False)
+    for route in ("/stats", "/subjects", "/photos"):
+        assert client.get(route).status_code == 503, f"{route} did not report unavailable"
+    assert client.get("/health").status_code == 503  # and readiness reflects it

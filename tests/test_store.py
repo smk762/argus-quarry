@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 
 from argus_quarry.models import Photograph, Subject
-from argus_quarry.store import ProvenanceStore
+from argus_quarry.store import ProvenanceStore, ProvenanceUnavailable
 
 
 def test_upsert_subject_is_idempotent_and_merges(config):
@@ -161,3 +161,46 @@ def test_immutable_store_reads_a_read_only_directory(config, read_only_dir):
     read_only_dir(config.home)
     with ProvenanceStore(config.db_path, immutable=True) as store:
         assert store.stats()["subjects"] == 1
+
+
+def test_open_readable_prefers_mode_ro_and_sees_a_live_writer(config):
+    """On a writable pool the read path must still see an in-flight fetch's WAL."""
+    with ProvenanceStore(config.db_path) as writer:
+        writer.upsert_subject(Subject(name="Albert Einstein"))
+        with ProvenanceStore.open_readable(config.db_path) as reader:
+            assert reader.open_mode == "read_only"  # not immutable: it must track the writer
+            assert reader.stats()["subjects"] == 1
+            writer.upsert_subject(Subject(name="Marie Curie"))
+        with ProvenanceStore.open_readable(config.db_path) as reader:
+            assert reader.stats()["subjects"] == 2
+
+
+def test_open_readable_uses_immutable_on_a_read_only_mount(config, read_only_dir):
+    with ProvenanceStore(config.db_path) as store:
+        store.upsert_subject(Subject(name="Albert Einstein"))
+
+    read_only_dir(config.home)
+    with ProvenanceStore.open_readable(config.db_path) as store:
+        assert store.open_mode == "immutable"
+        assert store.stats()["subjects"] == 1
+
+
+def test_open_readable_never_creates_anything(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        ProvenanceStore.open_readable(tmp_path / "nope" / "portraits.sqlite")
+    assert not (tmp_path / "nope").exists()
+
+
+def test_open_readable_rejects_an_unmigrated_pool(config, read_only_dir):
+    """A legacy schema cannot be migrated read-only, so it must be refused at open."""
+    conn = sqlite3.connect(config.db_path)
+    conn.executescript(
+        "CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+        "CREATE TABLE photographs (id INTEGER PRIMARY KEY, person_id INTEGER);"
+    )
+    conn.commit()
+    conn.close()
+    read_only_dir(config.home)
+
+    with pytest.raises(ProvenanceUnavailable):
+        ProvenanceStore.open_readable(config.db_path)

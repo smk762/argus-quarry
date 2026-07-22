@@ -329,6 +329,16 @@ Next.js frontend, so:
   as the `/gallery` route — consistent with how `/curate` already talks to
   curator. Strictly read-only: no mutation endpoints.
 
+Strictly read-only means the *store*, not just the routes. The server opens the
+pool via `ProvenanceStore.open_readable()`, which never mkdirs, never migrates
+and never relocates files — so an unmigrated or absent pool reports `503`
+instead of being silently created or upgraded by a `GET`. It prefers a `mode=ro`
+URI (which tracks a live `fetch` through the WAL) and falls back to
+`immutable=1` only on a read-only *directory* where the `-shm` sidecar cannot be
+created, and only when no `-wal` exists for that mode to read past. The same
+entry point backs the read-only CLI commands, so `stats` / `list` / `export` /
+`verify` work against a `:ro` `$QUARRY_HOME` too (issue #5).
+
 This keeps us to one real UI (the demo) instead of maintaining a second.
 
 ---
