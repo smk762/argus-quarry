@@ -209,3 +209,26 @@ def test_no_mutation_endpoints(client):
         if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"} or methods is None:
             continue
         assert methods <= {"GET", "HEAD"}, f"{path} exposes {methods}"
+
+
+def test_serves_a_read_only_quarry_home(config, seeded, read_only_dir):
+    """Issue #5: a `:ro` QUARRY_HOME must still answer every data route."""
+    read_only_dir(config.home)
+    client = TestClient(create_app(home=config.home))
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/stats").json()["photographs"] == 4
+    assert len(client.get("/subjects").json()["subjects"]) == 2
+    assert client.get("/photos").json()["total"] == 3
+    assert client.get("/photos/{}".format(seeded["with_file"])).status_code == 200
+    assert client.get("/thumb", params={"id": seeded["with_file"], "size": 64}).status_code == 200
+    # Nothing was created in the pool to answer them.
+    assert sorted(p.name for p in (config.home / "metadata").iterdir()) == ["portraits.sqlite"]
+
+
+def test_read_only_home_without_a_db_is_unavailable(tmp_path, read_only_dir):
+    home = tmp_path / "empty"
+    (home / "metadata").mkdir(parents=True)
+    read_only_dir(home)
+    resp = TestClient(create_app(home=home), raise_server_exceptions=False).get("/stats")
+    assert resp.status_code == 503

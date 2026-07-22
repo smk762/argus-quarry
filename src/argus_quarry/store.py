@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.request import pathname2url
 
 from argus_quarry.models import DEFAULT_CATEGORY, Photograph, Subject, normalise_category
 
@@ -66,14 +67,54 @@ def _now() -> str:
 class ProvenanceStore:
     """Thin wrapper around the SQLite provenance DB."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, read_only: bool = False, immutable: bool = False) -> None:
+        """Open the provenance DB.
+
+        ``read_only`` opens an existing DB through a ``mode=ro`` URI and skips
+        both the ``mkdir`` and the migration, so a pool mounted ``:ro`` can be
+        served (issue #5). SQLite still wants the *directory* writable for the
+        WAL sidecars in that mode; ``immutable`` additionally promises the file
+        never changes, which drops the sidecars entirely — correct for a
+        genuinely read-only mount, wrong while a ``fetch`` is writing.
+        """
         self.db_path = Path(db_path)
+        self.read_only = read_only or immutable
+        if self.read_only:
+            if not self.db_path.is_file():
+                raise FileNotFoundError(f"no provenance database at {self.db_path}")
+            uri = f"file:{pathname2url(str(self.db_path.resolve()))}?mode=ro"
+            if immutable:
+                uri += "&immutable=1"
+            self._conn = sqlite3.connect(uri, uri=True)
+            self._conn.row_factory = sqlite3.Row
+            self._probe()
+            return
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path))
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._migrate()
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            self._migrate()
+            self._probe()
+        except Exception:
+            # A connect() to an unwritable DB only fails once it touches the file.
+            self._conn.close()
+            raise
+
+    def _probe(self) -> None:
+        """Fail fast if this connection cannot actually read.
+
+        ``connect()`` is lazy and a WAL database wants to write its ``-shm``
+        sidecar before the first read, so an unusable connection otherwise only
+        surfaces mid-request. Closes itself before re-raising so the caller can
+        fall back to a stricter open mode.
+        """
+        try:
+            self._conn.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+        except Exception:
+            self._conn.close()
+            raise
 
     # ── schema / migration ──────────────────────────────────────────
     def _table_exists(self, name: str) -> bool:

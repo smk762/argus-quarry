@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,31 @@ def _split_csv(value: str | None) -> list[str] | None:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+def _open_store(db_path: Path) -> ProvenanceStore:
+    """Open the provenance DB for reading, degrading as the mount allows.
+
+    Read-write first, so a live ``fetch`` stays visible through WAL and a fresh
+    pool still gets its schema. On a ``:ro`` mount that fails at the ``mkdir``;
+    a plain ``mode=ro`` connection covers a writable dir holding a read-only DB,
+    and ``immutable=1`` covers the fully read-only mount, where SQLite cannot
+    create its WAL sidecars either (issue #5).
+    """
+    try:
+        return ProvenanceStore(db_path)
+    except (OSError, sqlite3.Error):
+        pass
+    try:
+        return ProvenanceStore(db_path, read_only=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except sqlite3.Error:
+        pass
+    try:
+        return ProvenanceStore(db_path, immutable=True)
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail=f"cannot open provenance database: {exc}") from exc
+
+
 def create_app(
     cors: bool = False,
     cors_origins: list[str] | None = None,
@@ -122,7 +148,7 @@ def create_app(
     @app.get("/stats")
     async def stats() -> dict[str, Any]:
         def _stats() -> dict[str, Any]:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store(config.db_path) as store:
                 return store.stats()
 
         return await asyncio.to_thread(_stats)
@@ -132,7 +158,7 @@ def create_app(
         category: str | None = Query(None, description="only this category (identity/wardrobe/setting/concept)"),
     ) -> dict[str, Any]:
         def _subjects() -> dict[str, Any]:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store(config.db_path) as store:
                 return {"subjects": store.subjects_with_counts(category=category)}
 
         return await asyncio.to_thread(_subjects)
@@ -157,7 +183,7 @@ def create_app(
                 "subject": subject,
                 "category": category,
             }
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store(config.db_path) as store:
                 total = store.count_photographs(**filters)
                 rows = store.iter_photographs(**filters, limit=limit, offset=offset)
             return {
@@ -172,7 +198,7 @@ def create_app(
     @app.get("/photos/{photo_id}")
     async def photo(photo_id: int) -> dict[str, Any]:
         def _get() -> Photograph | None:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store(config.db_path) as store:
                 return store.get_photograph(photo_id)
 
         ph = await asyncio.to_thread(_get)
@@ -188,7 +214,7 @@ def create_app(
         size = min(size, THUMB_MAX)
 
         def _get() -> Photograph | None:
-            with ProvenanceStore(config.db_path) as store:
+            with _open_store(config.db_path) as store:
                 return store.get_photograph(id)
 
         ph = await asyncio.to_thread(_get)

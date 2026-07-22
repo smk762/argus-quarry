@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import Path
 
 import numpy as np
@@ -75,3 +76,28 @@ def make_record(
         licence=licence,
         attribution="Someone",
     )
+
+
+@pytest.fixture
+def read_only_dir():
+    """Make a directory tree read-only for the test, restoring modes on teardown.
+
+    Stands in for a `:ro` bind mount (issue #5). Root ignores the mode bits, so
+    the tests that need it skip there rather than passing vacuously.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses directory permissions; cannot fake a read-only mount")
+
+    restore: list[tuple[Path, int]] = []
+
+    def _apply(root: Path) -> Path:
+        for path in [root, *root.rglob("*")]:
+            if path.is_dir():
+                restore.append((path, path.stat().st_mode))
+                path.chmod(0o555)
+        return root
+
+    yield _apply
+
+    for path, mode in reversed(restore):
+        path.chmod(mode)

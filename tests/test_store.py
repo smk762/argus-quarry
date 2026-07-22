@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from argus_quarry.models import Photograph, Subject
 from argus_quarry.store import ProvenanceStore
 
@@ -133,3 +135,29 @@ def test_iter_photographs_filters_by_category(config):
         wardrobe = store.iter_photographs(category="wardrobe")
         assert [p.subject for p in wardrobe] == ["Kimono"]
         assert wardrobe[0].category == "wardrobe"
+
+
+def test_read_only_store_reads_without_writing(config):
+    with ProvenanceStore(config.db_path) as store:
+        pid = store.upsert_subject(Subject(name="Albert Einstein"))
+        store.insert_pending(_photo(pid, "https://img/a.jpg"))
+
+    with ProvenanceStore(config.db_path, read_only=True) as store:
+        assert store.stats()["photographs"] == 1
+        with pytest.raises(sqlite3.OperationalError):
+            store.upsert_subject(Subject(name="Marie Curie"))
+
+
+def test_read_only_store_needs_an_existing_db(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        ProvenanceStore(tmp_path / "nope" / "portraits.sqlite", read_only=True)
+    assert not (tmp_path / "nope").exists()  # and it does not mkdir on the way
+
+
+def test_immutable_store_reads_a_read_only_directory(config, read_only_dir):
+    with ProvenanceStore(config.db_path) as store:
+        store.upsert_subject(Subject(name="Albert Einstein"))
+
+    read_only_dir(config.home)
+    with ProvenanceStore(config.db_path, immutable=True) as store:
+        assert store.stats()["subjects"] == 1

@@ -186,6 +186,19 @@ overriding the command (`docker run ... ghcr.io/smk762/argus-quarry fetch …`).
 The pool root comes from `$QUARRY_HOME` (default `./quarry`), exactly like every
 other command — the compose service just sets `QUARRY_HOME=/data/quarry`.
 
+Serving is genuinely read-only, so an internet-facing deployment can mount the
+pool `:ro` and quarry opens the DB through a `mode=ro` (`immutable=1`) SQLite URI
+instead of creating its WAL sidecars:
+
+```bash
+docker run --rm -p 8102:8102 -v "$PWD/quarry:/data/quarry:ro" \
+  -e QUARRY_HOME=/data/quarry ghcr.io/smk762/argus-quarry:latest
+```
+
+The DB must already exist under that mount (nothing can be created), otherwise
+the data routes answer `503`. On a writable mount the server still opens
+read-write, so a concurrently running `fetch` stays visible through WAL.
+
 | Endpoint | Returns |
 |---|---|
 | `GET /health` | `{status, service, version, quarry_home}` |
