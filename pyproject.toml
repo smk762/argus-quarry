@@ -48,7 +48,7 @@ all = [
     "uvicorn>=0.27",
 ]
 # fastapi is here so the server tests run (they importorskip it otherwise).
-dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110"]
+dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "httpx2>=2.7"]
 
 [project.scripts]
 argus-quarry = "argus_quarry.cli:app"
