@@ -118,14 +118,20 @@ jobs:
       - name: Smoke-test the server
         run: |
           docker run -d --name quarry-smoke -p 8102:8102 argus-quarry:smoke
+          # Poll liveness, not readiness: the image ships with no pool, so it is
+          # deliberately live-but-not-ready. /health must not depend on the DB or
+          # no data-less image could ever publish (issue #10).
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8102/health; then ok=1; break; fi
             sleep 1
           done
           echo
+          # And confirm the split holds: an empty pool is correctly unready.
+          ready=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8102/ready || true)
           docker logs quarry-smoke
           docker rm -f quarry-smoke >/dev/null
-          test -n "$ok" || { echo "::error::server did not become healthy"; exit 1; }
+          test -n "$ok" || { echo "::error::server did not become live"; exit 1; }
+          test "$ready" = "503" || { echo "::error::empty pool should be unready, got $ready"; exit 1; }
       - name: Smoke-test the CLI entrypoint still works
         run: docker run --rm argus-quarry:smoke --help
       - uses: docker/build-push-action@v6

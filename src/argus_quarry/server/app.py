@@ -5,7 +5,8 @@ no mutation endpoints. It powers the argus-studio ``/gallery`` view.
 
 Routes:
 
-    GET /health
+    GET /health                          -> liveness (always 200 while up)
+    GET /ready                           -> readiness (503 until the pool is serveable)
     GET /stats
     GET /subjects?category=
     GET /photos?category=&subject=&licence=&source=&status=&limit=&offset=
@@ -154,8 +155,33 @@ def create_app(
     _open_store = _make_opener(config.db_path)
 
     @app.get("/health")
-    async def health(response: Response) -> dict[str, Any]:
-        """Readiness, not just liveness: a process that cannot open the pool is not serving."""
+    async def health() -> dict[str, Any]:
+        """Liveness: the process is up and answering HTTP. Independent of the pool.
+
+        Deliberately does NOT open the DB. A container mounted at an empty
+        ``QUARRY_HOME`` that is seeded later (argus-halo restores the pool from
+        tape after boot) is *live* from the first request; whether it has data
+        to serve yet is :func:`ready`'s job. Conflating the two here is what made
+        an empty pool report unhealthy forever and blocked the release smoke test
+        (issue #10).
+        """
+        return {
+            "status": "ok",
+            "service": "argus-quarry",
+            "version": __version__,
+            "quarry_home": str(config.home.resolve()),
+        }
+
+    @app.get("/ready")
+    async def ready(response: Response) -> dict[str, Any]:
+        """Readiness: ``200`` only when the provenance DB can actually be served.
+
+        Orchestrators and load balancers should route on this, so a container
+        whose pool is missing, unmigrated, or carrying an unreadable WAL is taken
+        out of rotation (``503``) instead of answering the data routes with
+        errors. Opens the DB exactly as the data routes do, so it reports the
+        same reason they would fail.
+        """
 
         def _probe() -> str | None:
             try:
@@ -168,10 +194,8 @@ def create_app(
         if detail is not None:
             response.status_code = 503
         return {
-            "status": "ok" if detail is None else "degraded",
+            "status": "ready" if detail is None else "unavailable",
             "service": "argus-quarry",
-            "version": __version__,
-            "quarry_home": str(config.home.resolve()),
             "database": "ok" if detail is None else detail,
         }
 

@@ -323,9 +323,9 @@ Next.js frontend, so:
   enough to inspect provenance.
 - **Later (optional) — now built:** a tiny read-only FastAPI `server/`
   (`argus-quarry serve`, the `server` extra, `:8102`) exposing provenance
-  queries: `/health`, `/stats`, `/subjects`, `/photos` (filter by subject /
-  category / source / licence / status, paginated), `/photos/{id}` and a
-  `/thumb` WEBP renderer over the pooled files. The demo frontend surfaces it
+  queries: `/health`, `/ready`, `/stats`, `/subjects`, `/photos` (filter by
+  subject / category / source / licence / status, paginated), `/photos/{id}` and
+  a `/thumb` WEBP renderer over the pooled files. The demo frontend surfaces it
   as the `/gallery` route — consistent with how `/curate` already talks to
   curator. Strictly read-only: no mutation endpoints.
 
@@ -338,6 +338,14 @@ URI (which tracks a live `fetch` through the WAL) and falls back to
 created, and only when no `-wal` exists for that mode to read past. The same
 entry point backs the read-only CLI commands, so `stats` / `list` / `export` /
 `verify` work against a `:ro` `$QUARRY_HOME` too (issue #5).
+
+Liveness (`/health`) and readiness (`/ready`) are split. `/health` is pure
+liveness — `200` while the process answers, no DB dependency — so a container
+mounted at an empty `QUARRY_HOME` that is seeded later (argus-halo restores the
+pool from tape after boot) is live from first request. `/ready` opens the pool
+and `503`s until it is serveable, which is the signal an orchestrator routes on.
+Folding readiness into `/health` made a data-less image permanently unhealthy
+and blocked the release smoke test (issue #10).
 
 This keeps us to one real UI (the demo) instead of maintaining a second.
 
