@@ -92,6 +92,34 @@ jobs:
             type=raw,value=latest
       # The base image has no git, so pass the version in via build-arg
       # (SETUPTOOLS_SCM_PRETEND_VERSION) rather than relying on .git history.
+      #
+      # Build locally first and smoke-test that the image can actually serve —
+      # the 0.2.0 tags shipped without the [server] extra and would have failed
+      # here (issue #3). Only then push; the second build is a cache hit.
+      - name: Build image locally for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          tags: argus-quarry:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the server
+        run: |
+          docker run -d --name quarry-smoke -p 8102:8102 argus-quarry:smoke
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8102/health; then ok=1; break; fi
+            sleep 1
+          done
+          echo
+          docker logs quarry-smoke
+          docker rm -f quarry-smoke >/dev/null
+          test -n "$ok" || { echo "::error::server did not become healthy"; exit 1; }
+      - name: Smoke-test the CLI entrypoint still works
+        run: docker run --rm argus-quarry:smoke --help
       - uses: docker/build-push-action@v6
         with:
           context: .

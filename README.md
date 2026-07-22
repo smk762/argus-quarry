@@ -173,6 +173,16 @@ pip install "argus-quarry[server]"          # fastapi + uvicorn
 argus-quarry serve --host 0.0.0.0 --port 8102 --cors
 ```
 
+The published image ships the `server` extra and serves by default on `:8102`:
+
+```bash
+docker run --rm -p 8102:8102 -v "$PWD/quarry:/data/quarry" \
+  -e QUARRY_HOME=/data/quarry ghcr.io/smk762/argus-quarry:latest
+```
+
+The entrypoint is still `argus-quarry`, so any acquisition subcommand works by
+overriding the command (`docker run ... ghcr.io/smk762/argus-quarry fetch …`).
+
 The pool root comes from `$QUARRY_HOME` (default `./quarry`), exactly like every
 other command — the compose service just sets `QUARRY_HOME=/data/quarry`.
 

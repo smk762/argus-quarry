@@ -15,15 +15,19 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 COPY . /app
 
-# Extras to install; the argus-studio compose adds "server" for the
-# read-only provenance API behind its /gallery page.
-ARG EXTRAS=cli,phash
+# Extras to install. "server" is in the default set so the published image can
+# run the read-only provenance API behind argus-studio's /gallery page.
+ARG EXTRAS=cli,phash,server
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install ".[${EXTRAS}]"
 
-# Run-to-completion acquisition job (not a long-lived server). The compose
-# `gallery` profile overrides this command with concrete source/limit flags.
+# Read-only provenance API (DESIGN.md section 9).
+EXPOSE 8102
+
+# Serve by default; keeping ENTRYPOINT means the run-to-completion acquisition
+# subcommands still work by overriding the command (e.g. the compose `gallery`
+# profile passes concrete source/limit flags).
 ENTRYPOINT ["argus-quarry"]
-CMD ["--help"]
+CMD ["serve", "--port", "8102", "--cors"]
