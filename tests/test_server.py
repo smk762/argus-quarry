@@ -118,7 +118,11 @@ def test_health_is_live_even_with_no_database(tmp_path):
     # ...but readiness reflects that there is nothing to serve, and nothing was created.
     ready = client.get("/ready")
     assert ready.status_code == 503
-    assert ready.json()["status"] == "unavailable"
+    assert ready.json() == {
+        "status": "unavailable",
+        "service": "argus-quarry",
+        "database": "provenance database unavailable",  # generic reason, no path leaked
+    }
     assert not home.exists()
 
 
@@ -316,8 +320,10 @@ def test_read_only_home_with_a_hot_wal_is_unavailable_not_stale(config, tmp_path
     read_only_dir(home)
     config = config.model_copy(update={"home": home})
 
-    resp = TestClient(create_app(home=config.home), raise_server_exceptions=False).get("/stats")
-    assert resp.status_code == 503, f"served {resp.json()} past an unreadable WAL"
+    client = TestClient(create_app(home=config.home), raise_server_exceptions=False)
+    stats = client.get("/stats")
+    assert stats.status_code == 503, f"served {stats.json()} past an unreadable WAL"
+    assert client.get("/ready").status_code == 503  # readiness reflects the unreadable WAL too
 
 
 def test_legacy_pool_served_read_only_is_unavailable_not_500(config, read_only_dir):
