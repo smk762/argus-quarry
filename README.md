@@ -186,11 +186,17 @@ overriding the command (`docker run ... ghcr.io/smk762/argus-quarry fetch …`).
 The pool root comes from `$QUARRY_HOME` (default `./quarry`), exactly like every
 other command — the compose service just sets `QUARRY_HOME=/data/quarry`.
 
-Serving never writes to the pool — on any mount. The DB is opened through a
-`mode=ro` SQLite URI, which still tracks a concurrently running `fetch` through
-the WAL; the server never creates, migrates or relocates anything, so pointing
-it at an empty or unmigrated pool reports `503` rather than quietly building one.
-That means the pool can be mounted `:ro`:
+Serving never mutates the provenance data — on any mount. The DB is opened
+through a `mode=ro` SQLite URI, which still tracks a concurrently running `fetch`
+through the WAL; the server never migrates, relocates, or writes a row, so
+pointing it at an empty or unmigrated pool reports `503` rather than quietly
+building one.
+
+It is not wholly side-effect-free on a *writable* mount, though: `mode=ro` lets
+SQLite create the `-wal`/`-shm` sidecars it uses to follow the WAL, and a
+read-only connection can never checkpoint or unlink them, so those two files
+persist beside the DB (reused across opens, not accumulated — two files, not
+unbounded growth; issue #9). Mounting the pool `:ro` avoids them entirely:
 
 ```bash
 docker run --rm -p 8102:8102 -v "$PWD/quarry:/data/quarry:ro" \
@@ -204,6 +210,12 @@ none: a pool snapshotted mid-write, or left behind by a killed `fetch`, answers
 `503` instead of silently serving stale counts. Checkpoint it
 (`sqlite3 portraits.sqlite 'PRAGMA wal_checkpoint(TRUNCATE)'`), or mount the pool
 writable, and it serves normally.
+
+The image runs as a non-root user (uid `10001`), so a bind-mounted `$QUARRY_HOME`
+must be readable by that uid to serve, and writable by it for the acquisition
+subcommands (`fetch`, `run`) — e.g. `chown -R 10001:10001 quarry/` on the host.
+This keeps the read-only sidecars above, and anything the acquisition commands
+land, owned by an unprivileged uid rather than root (issues #8/#9).
 
 The read-only CLI commands (`stats`, `list`, `export`, `verify` without
 `--repair`) open the pool the same way, so they work against a `:ro` mount too.

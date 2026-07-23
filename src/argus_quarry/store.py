@@ -94,11 +94,14 @@ class ProvenanceStore:
         ``read_only`` opens an existing DB through a ``mode=ro`` URI and skips
         both the ``mkdir`` and the migration, so a pool mounted ``:ro`` can be
         served (issue #5). ``mode=ro`` still reads a live WAL correctly, but
-        SQLite must create the ``-shm`` sidecar to do so, which a read-only
-        *directory* denies. ``immutable`` promises the file never changes, which
-        needs no sidecars — but it therefore IGNORES any ``-wal``, so it is only
-        safe when there is none. Prefer :meth:`open_readable`, which picks
-        between the two and refuses to read past a WAL it cannot see.
+        SQLite must create the ``-shm`` (and, tracking the WAL, ``-wal``) sidecar
+        to do so, which a read-only *directory* denies. On a *writable* mount
+        that create succeeds, and a read-only connection can never checkpoint or
+        unlink them, so the two sidecars persist beside the DB — reused across
+        opens, not accumulated (issue #9). ``immutable`` promises the file never
+        changes, which needs no sidecars — but it therefore IGNORES any ``-wal``,
+        so it is only safe when there is none. Prefer :meth:`open_readable`,
+        which picks between the two and refuses to read past a WAL it cannot see.
         """
         self.db_path = Path(db_path)
         self.read_only = read_only or immutable
