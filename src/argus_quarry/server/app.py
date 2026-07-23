@@ -5,7 +5,8 @@ no mutation endpoints. It powers the argus-studio ``/gallery`` view.
 
 Routes:
 
-    GET /health
+    GET /health                          -> liveness (always 200 while up)
+    GET /ready                           -> readiness (503 until the pool is serveable)
     GET /stats
     GET /subjects?category=
     GET /photos?category=&subject=&licence=&source=&status=&limit=&offset=
@@ -27,7 +28,7 @@ from typing import Any
 
 try:
     from fastapi import FastAPI, HTTPException, Query
-    from fastapi.responses import Response
+    from fastapi.responses import JSONResponse, Response
 except ImportError as exc:  # pragma: no cover
     raise ImportError("Server requires: pip install argus-quarry[server]") from exc
 
@@ -81,6 +82,7 @@ def _split_csv(value: str | None) -> list[str] | None:
 
 
 _UNAVAILABLE = "provenance database unavailable"
+_SERVICE = "argus-quarry"
 
 
 def _make_opener(db_path: Path):
@@ -152,10 +154,41 @@ def create_app(
 
     logger.info("server_ready", quarry_home=str(config.home), db=str(config.db_path))
     _open_store = _make_opener(config.db_path)
+    # Resolve the pool path once, at startup. The mount cannot change while the
+    # process lives (the same invariant ``_make_opener`` relies on), so liveness
+    # never repeats a blocking ``resolve()`` on the event loop — a slow or hung
+    # ``QUARRY_HOME`` mount must not be able to stall the liveness probe.
+    quarry_home = str(config.home.resolve())
 
     @app.get("/health")
-    async def health(response: Response) -> dict[str, Any]:
-        """Readiness, not just liveness: a process that cannot open the pool is not serving."""
+    async def health() -> dict[str, Any]:
+        """Liveness: the process is up and answering HTTP. Independent of the pool.
+
+        Deliberately does NOT open the DB (nor touch the pool at request time).
+        A container mounted at an empty ``QUARRY_HOME`` that is seeded later
+        (argus-halo restores the pool from tape after boot) is *live* from the
+        first request; whether it has data to serve yet is :func:`ready`'s job.
+        Conflating the two here is what made an empty pool report unhealthy
+        forever and blocked the release smoke test (issue #10).
+        """
+        return {
+            "status": "ok",
+            "service": _SERVICE,
+            "version": __version__,
+            "quarry_home": quarry_home,
+        }
+
+    @app.get("/ready")
+    async def ready() -> Response:
+        """Readiness: ``200`` only when the provenance DB can actually be served.
+
+        Orchestrators and load balancers should route on this, so a container
+        whose pool is missing, unmigrated, or carrying an unreadable WAL is taken
+        out of rotation (``503``) instead of answering the data routes with
+        errors. Opens the DB exactly as the data routes do, so it 503s for the
+        same reasons they would fail. The ``database`` field is a single generic
+        reason, not a per-cause code, so it never leaks a filesystem path.
+        """
 
         def _probe() -> str | None:
             try:
@@ -163,17 +196,16 @@ def create_app(
                     return None
             except HTTPException as exc:
                 return str(exc.detail)
+            except Exception:  # any open failure means "not ready" — a 503, never a 500
+                return _UNAVAILABLE
 
         detail = await asyncio.to_thread(_probe)
         if detail is not None:
-            response.status_code = 503
-        return {
-            "status": "ok" if detail is None else "degraded",
-            "service": "argus-quarry",
-            "version": __version__,
-            "quarry_home": str(config.home.resolve()),
-            "database": "ok" if detail is None else detail,
-        }
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unavailable", "service": _SERVICE, "database": detail},
+            )
+        return JSONResponse(content={"status": "ready", "service": _SERVICE, "database": "ok"})
 
     @app.get("/stats")
     async def stats() -> dict[str, Any]:

@@ -1,0 +1,23 @@
+# Keep the build context lean and, crucially, pool-free: `COPY . /app` would
+# otherwise ship a local `QUARRY_HOME` into the image, and the release smoke
+# test asserts a data-less image is live-but-unready (`/ready` -> 503, issue
+# #10/#12). A stray pool would make `/ready` answer 200 and fail the release.
+quarry/
+
+# The image derives its version from the VERSION build-arg
+# (SETUPTOOLS_SCM_PRETEND_VERSION), never from git history, so `.git` is dead
+# weight in the context.
+.git
+.gitignore
+
+# Host-specific / regenerated artifacts — never belong in the image.
+.venv/
+dist/
+build/
+*.egg-info/
+src/argus_quarry/_version.py
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

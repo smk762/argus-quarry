@@ -92,15 +92,38 @@ def client(config, seeded) -> TestClient:
 
 
 def test_health(config, client):
-    body = client.get("/health").json()
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    body = resp.json()
     assert body == {
         "status": "ok",
         "service": "argus-quarry",
         "version": body["version"],
         "quarry_home": str(config.home.resolve()),
-        "database": "ok",
     }
     assert isinstance(body["version"], str) and body["version"]
+
+
+def test_ready_reports_a_serveable_pool(client):
+    resp = client.get("/ready")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ready", "service": "argus-quarry", "database": "ok"}
+
+
+def test_health_is_live_even_with_no_database(tmp_path):
+    """Liveness must not depend on the pool: an empty QUARRY_HOME is still live (issue #10)."""
+    home = tmp_path / "empty"
+    client = TestClient(create_app(home=home), raise_server_exceptions=False)
+    assert client.get("/health").status_code == 200
+    # ...but readiness reflects that there is nothing to serve, and nothing was created.
+    ready = client.get("/ready")
+    assert ready.status_code == 503
+    assert ready.json() == {
+        "status": "unavailable",
+        "service": "argus-quarry",
+        "database": "provenance database unavailable",  # generic reason, no path leaked
+    }
+    assert not home.exists()
 
 
 def test_health_respects_quarry_home_env(config, monkeypatch):
@@ -230,6 +253,7 @@ def test_serves_a_read_only_quarry_home(config, seeded, read_only_dir):
     client = TestClient(create_app(home=config.home))
 
     assert client.get("/health").status_code == 200
+    assert client.get("/ready").status_code == 200
     assert client.get("/stats").json()["photographs"] == 4
     assert len(client.get("/subjects").json()["subjects"]) == 2
     assert client.get("/photos").json()["total"] == 3
@@ -296,8 +320,10 @@ def test_read_only_home_with_a_hot_wal_is_unavailable_not_stale(config, tmp_path
     read_only_dir(home)
     config = config.model_copy(update={"home": home})
 
-    resp = TestClient(create_app(home=config.home), raise_server_exceptions=False).get("/stats")
-    assert resp.status_code == 503, f"served {resp.json()} past an unreadable WAL"
+    client = TestClient(create_app(home=config.home), raise_server_exceptions=False)
+    stats = client.get("/stats")
+    assert stats.status_code == 503, f"served {stats.json()} past an unreadable WAL"
+    assert client.get("/ready").status_code == 503  # readiness reflects the unreadable WAL too
 
 
 def test_legacy_pool_served_read_only_is_unavailable_not_500(config, read_only_dir):
@@ -315,4 +341,5 @@ def test_legacy_pool_served_read_only_is_unavailable_not_500(config, read_only_d
     client = TestClient(create_app(home=config.home), raise_server_exceptions=False)
     for route in ("/stats", "/subjects", "/photos"):
         assert client.get(route).status_code == 503, f"{route} did not report unavailable"
-    assert client.get("/health").status_code == 503  # and readiness reflects it
+    assert client.get("/health").status_code == 200  # process is live...
+    assert client.get("/ready").status_code == 503  # ...but not ready to serve this pool

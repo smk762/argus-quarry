@@ -208,13 +208,21 @@ writable, and it serves normally.
 The read-only CLI commands (`stats`, `list`, `export`, `verify` without
 `--repair`) open the pool the same way, so they work against a `:ro` mount too.
 
-`GET /health` is a readiness check, not just liveness: it opens the DB and
-answers `503` with `{"status": "degraded", "database": "..."}` when the pool
-cannot be served, so an orchestrator sheds a container that is up but useless.
+Liveness and readiness are separate. `GET /health` answers `200` whenever the
+process is up — it never touches the DB — so a container mounted at an empty
+`QUARRY_HOME` that is seeded later still comes up live. `GET /ready` opens the
+pool and answers `503` with `{"status": "unavailable", "service": "argus-quarry",
+"database": "..."}` when it cannot be served (missing, unmigrated, or an
+unreadable WAL); the `database` value is a single generic reason
+(`"provenance database unavailable"`), deliberately not a per-cause code, so it
+never leaks a filesystem path. Point an orchestrator's *readiness* probe at
+`/ready` to shed a container that is up but has no data to serve, and its
+*liveness* probe at `/health`.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /health` | `{status, service, version, quarry_home, database}` — `503` if the pool cannot be served |
+| `GET /health` | Liveness: `200 {status, service, version, quarry_home}` while the process is up |
+| `GET /ready` | Readiness: `200 {status: ready, service, database: ok}`, or `503 {status: unavailable, service, database}` when the pool cannot be served |
 | `GET /stats` | Counts by status / category / source / licence + `total_bytes` (mirrors `stats`) |
 | `GET /subjects?category=` | Distinct subjects with landed photo counts: `{subjects: [{folder, category, photo_count}]}` |
 | `GET /photos?category=&subject=&licence=&source=&status=&limit=&offset=` | Paginated provenance rows: `{total, offset, limit, photos: […]}`; `status` defaults to `complete` (pass empty for all), `licence` accepts CSV (`CC0,PD`), `limit` ≤ 500 |
