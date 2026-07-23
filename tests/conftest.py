@@ -87,11 +87,12 @@ def read_only_dir():
     Stands in for a `:ro` bind mount (issue #5), so it must deny writes to
     *files* as well as directories — dirs at 0o555 alone still let an existing
     file be rewritten in place, which a real read-only mount refuses with EROFS.
-    Root ignores the mode bits, so tests that need it skip there rather than
-    passing vacuously.
+    Root ignores the mode bits, so tests that need it ``xfail`` there rather than
+    passing vacuously — ``xfail`` (not ``skip``) so the lost coverage stays
+    visible in the run summary when the suite is run as root (issue #8).
     """
     if os.geteuid() == 0:
-        pytest.skip("root bypasses permissions; cannot fake a read-only mount")
+        pytest.xfail("root bypasses file permissions; cannot fake a read-only mount")
 
     restore: list[tuple[Path, int]] = []
 

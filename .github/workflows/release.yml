@@ -134,6 +134,10 @@ jobs:
           test "$ready" = "503" || { echo "::error::empty pool should be unready, got $ready"; exit 1; }
       - name: Smoke-test the CLI entrypoint still works
         run: docker run --rm argus-quarry:smoke --help
+      - name: Image runs as a non-root user (issue #8)
+        run: |
+          uid=$(docker run --rm --entrypoint id argus-quarry:smoke -u)
+          test "$uid" = "10001" || { echo "::error::image must run as non-root uid 10001, got '$uid'"; exit 1; }
       - uses: docker/build-push-action@v6
         with:
           context: .

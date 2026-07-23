@@ -23,6 +23,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install ".[${EXTRAS}]"
 
+# Run as a non-root user (issue #8). As root the server writes root-owned
+# -wal/-shm sidecars into a host bind mount (issue #9), which then breaks a
+# later host-side `fetch` run as a normal user, and an internet-facing service
+# has no business defaulting to uid 0. `chown` only the WORKDIR so the default
+# ./quarry pool can be created there; a bind-mounted $QUARRY_HOME must itself be
+# readable by uid 10001 to serve, and writable by it for the acquisition
+# subcommands (see the README).
+RUN useradd --uid 10001 --user-group --create-home --shell /usr/sbin/nologin quarry \
+    && chown quarry:quarry /app
+USER quarry
+
 # Read-only provenance API (DESIGN.md section 9).
 EXPOSE 8102
 
