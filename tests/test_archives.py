@@ -39,7 +39,7 @@ def pd12m_dir(tmp_path: Path) -> Path:
         (
             "a1",
             "https://s3.example/a1.jpeg",
-            "A harbour with fishing boats at dawn",
+            "A black and white photo of a harbour with fishing boats at dawn, 1923.",
             2400,
             1600,
             "image/jpeg",
@@ -50,7 +50,7 @@ def pd12m_dir(tmp_path: Path) -> Path:
         (
             "a2",
             "https://s3.example/a2.jpeg",
-            "Portrait of a woman in a wool coat",
+            "A painting of a woman in a wool coat with a red scarf",
             1200,
             1800,
             "image/jpeg",
@@ -58,7 +58,17 @@ def pd12m_dir(tmp_path: Path) -> Path:
             PD_MARK,
             "Metropolitan Museum of Art",
         ),
-        ("a3", "https://s3.example/a3.png", "A beetle on a leaf", 600, 600, "image/png", "h3", PD_ZERO, "iNaturalist"),
+        (
+            "a3",
+            "https://s3.example/a3.png",
+            "A photo of a green beetle on a leaf. Taken in the 1990s",
+            600,
+            600,
+            "image/png",
+            "h3",
+            PD_ZERO,
+            "iNaturalist",
+        ),
         (
             "a4",
             "https://s3.example/a4.jpeg",
@@ -95,7 +105,7 @@ def megalith_dir(tmp_path: Path) -> Path:
     caps.write_text(
         "url_source,caption\n"
         'https://www.flickr.com/photos/111@N01/9001,"\nTwo children crouching by the stairs.\n"\n'
-        'https://www.flickr.com/photos/222@N02/9003,"\nA red tram on a ""busy"" street.\n"\n'
+        'https://www.flickr.com/photos/222@N02/9003,"\nA red tram on a ""busy"" street in 1975.\n"\n'
     )
     _write_parquet(
         root / "drawthings" / "00000.parquet",
@@ -184,6 +194,41 @@ def test_caption_terms_parsing():
     assert caption_terms("- lone dash") == (["lone", "dash"], [])
 
 
+def test_caption_derived_tone_medium_year(archives_config):
+    pd = get_archive("pd12m", archives_config)
+    by_id = {i["id"]: i for i in pd.search(ArchiveQuery())["items"]}
+    assert {k: (v["tone"], v["medium"], v["year"]) for k, v in by_id.items()} == {
+        "a1": ("bw", "photo", 1923),
+        "a2": ("color", "painting", None),
+        "a3": ("color", "photo", 1990),  # a decade counts as its first year
+        "a4": (None, None, None),  # caption names neither: unknown, not guessed
+    }
+    assert ids(pd.search(ArchiveQuery(tone="bw"))) == {"a1"}
+    assert ids(pd.search(ArchiveQuery(tone="color", mediums=["photo"]))) == {"a3"}
+    assert ids(pd.search(ArchiveQuery(mediums=["painting", "drawing"]))) == {"a2"}
+    assert ids(pd.search(ArchiveQuery(year_min=1900, year_max=1950))) == {"a1"}
+    assert ids(pd.search(ArchiveQuery(year_min=1950))) == {"a3"}  # undated items never match a range
+    f = pd.facets()
+    assert {x["name"]: x["count"] for x in f["tones"]} == {"color": 2, "bw": 1}
+    assert f["dated"] == 2 and f["year_range"] == [1923, 1990]
+
+    mg = get_archive("megalith", archives_config)
+    by_id = {i["id"]: i for i in mg.search(ArchiveQuery())["items"]}
+    assert by_id["9002"]["medium"] == "photo"  # Megalith defaults to photo even without a caption
+    assert (by_id["9003"]["tone"], by_id["9003"]["year"]) == ("color", 1975)
+
+
+def test_index_from_older_schema_asks_for_rebuild(archives_config):
+    pd = get_archive("pd12m", archives_config)
+    con = duckdb.connect(str(pd.index_path))
+    con.execute("DROP TABLE meta")
+    con.close()
+    status = pd.status()
+    assert status["indexed"] is False and status["stale"] is True
+    with pytest.raises(ArchiveUnavailable, match="older argus-quarry"):
+        pd.search(ArchiveQuery())
+
+
 def test_pd12m_facets(archives_config):
     f = get_archive("pd12m", archives_config).facets()
     assert f["total"] == 4 and f["sized"] == 4 and f["n_collections"] == 3
@@ -196,7 +241,7 @@ def test_megalith_joins_captions_and_sizes(archives_config):
     by_id = {i["id"]: i for i in mg.search(ArchiveQuery())["items"]}
     assert set(by_id) == {"9001", "9002", "9003"}
     assert by_id["9001"]["caption"] == "Two children crouching by the stairs."  # CSV newline trimmed
-    assert by_id["9003"]["caption"] == 'A red tram on a "busy" street.'
+    assert by_id["9003"]["caption"] == 'A red tram on a "busy" street in 1975.'
     assert by_id["9002"]["caption"] is None and by_id["9002"]["width"] is None  # failed in drawthings
     assert (by_id["9001"]["width"], by_id["9001"]["height"]) == (1024, 683)
     assert by_id["9001"]["collection"] == "111@N01"
@@ -377,5 +422,29 @@ def test_server_and_slice_carry_exclusions(archives_config, monkeypatch):
     client = _app(archives_config, monkeypatch)
     page = client.get("/archives/pd12m/search", params={"q": "harbour", "exclude": "fog"}).json()
     assert [i["id"] for i in page["items"]] == ["a1"]
+    derived = client.get(
+        "/archives/pd12m/search", params={"tone": "color", "medium": "photo,painting", "year_min": 1980}
+    ).json()
+    assert [i["id"] for i in derived["items"]] == ["a3"]
     plan = client.get("/archives/pd12m/slice", params={"q": "harbour -fog", "subject": "h"}).json()
     assert plan["matches"] == 1 and plan["slice"]["query"]["q"] == "harbour -fog"
+
+
+def test_medium_is_read_from_the_caption_head_only(tmp_path):
+    cols = ("id", "url", "caption", "width", "height", "mime_type", "hash", "license", "source")
+    captions = {
+        "m1": "The image shows a blue and white porcelain brush pot with a painting of a man.",
+        "m2": "The image is a black and white photo of a harbor.",
+        "m3": "The image shows an old drawing of a castle on a hill.",
+        "m4": "A watercolour of a lake at dusk.",
+    }
+    rows = [
+        (k, f"https://s3.example/{k}.jpeg", c, 800, 600, "image/jpeg", k, PD_ZERO, "Test") for k, c in captions.items()
+    ]
+    root = tmp_path / "pd"
+    _write_parquet(root / "metadata" / "x.parquet", [dict(zip(cols, r, strict=True)) for r in rows])
+    cfg = QuarryConfig(home=tmp_path / "q", archive_dirs={"pd12m": root})
+    pd = get_archive("pd12m", cfg)
+    pd.build_index()
+    got = {i["id"]: i["medium"] for i in pd.search(ArchiveQuery())["items"]}
+    assert got == {"m1": None, "m2": "photo", "m3": "drawing", "m4": "painting"}

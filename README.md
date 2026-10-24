@@ -273,6 +273,16 @@ argus-quarry archives search pd12m --q "harbour boats" --min-short-side 1024
 argus-quarry archives fetch slice.json            # --dry-run lists the URLs first
 ```
 
+**Tone, medium and year** are read from each caption when the index is built, because neither dataset records them per image. They're cues, not ground truth: an item whose caption doesn't say is left out when you filter on them.
+
+| Filter | Derived from | PD12M | Megalith |
+|---|---|---|---|
+| `tone` = `bw` / `color` | "black and white", "monochrome", "sepia" … versus colour words | 3.56M bw, 4.31M colour | 0.66M bw, 7.02M colour |
+| `medium` = `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` | the caption's opening words ("The image shows a black and white photo of …") | ~5.1M labelled | photo unless the caption says otherwise (Megalith filtered out non-photos) |
+| `year_min` / `year_max` | the first year or decade a caption mentions | 61k | 128k |
+
+Neither archive carries capture dates (Megalith's archived EXIF has none), so the year filter only finds images whose caption states a year. Rebuild old indexes after upgrading: an index from an older quarry reports `stale` and asks for `archives index`.
+
 Caption terms (`q`, `exclude`, `--q`, `--exclude`) are case-insensitive substrings. Every term in `q` must appear and none in `exclude` may; `"quoted phrases"` stay whole, and a leading `-` in `q` excludes a term (`harbor boats -painting`). An uncaptioned item doesn't mention anything, so an exclusion keeps it.
 
 A slice is a query plus where it lands:
@@ -288,7 +298,7 @@ The server exposes the same thing over HTTP. Every route is `GET` except the fet
 |---|---|
 | `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`) and `fetch_allowed` |
 | `GET /archives/{name}/facets` | collections, licences and MIME types with counts |
-| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest` |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest` |
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |

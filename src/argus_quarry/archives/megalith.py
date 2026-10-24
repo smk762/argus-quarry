@@ -29,6 +29,7 @@ LICENCE = "public domain or equivalent (Megalith-10m filter: Flickr PDM / CC-zer
 class MegalithArchive(Archive):
     name = "megalith"
     source = "megalith"
+    default_medium = "photo"  # Megalith's builders filtered out non-photos with CLIP
     title = "Megalith-10m"
     description = (
         "9.58M Flickr photos marked public domain, CC0, Flickr Commons or US Gov; shuffled, "

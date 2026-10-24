@@ -21,7 +21,7 @@ Routes:
     GET  /archives                        -> configured archives + fetch_allowed
     GET  /archives/{name}/facets          -> collections / licences / mimes with counts
     GET  /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=
-                                 &min_short_side=&orientation=&sized_only=&ids=&sort=&limit=&offset=
+                                 &min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=
     GET  /archives/{name}/items/{id}
     GET  /archives/{name}/thumb?id=&size= -> image/webp (PD12M) or a redirect to Flickr's own small size
     GET  /archives/{name}/slice?<search filters>&category=&subject=&limit=
@@ -362,6 +362,10 @@ def _archive_query(
     min_short_side: int | None = Query(None, ge=1),
     orientation: Literal["landscape", "portrait", "square"] | None = Query(None),
     sized_only: bool = Query(False, description="only items whose dimensions are known"),
+    tone: Literal["bw", "color"] | None = Query(None, description="caption-derived: bw or color"),
+    medium: str | None = Query(None, description="comma-separated caption-derived mediums, e.g. photo,painting"),
+    year_min: int | None = Query(None, description="caption-mentioned year >="),
+    year_max: int | None = Query(None, description="caption-mentioned year <="),
     ids: str | None = Query(None, description="comma-separated explicit selection"),
     sort: Literal["shuffle", "largest"] = Query("shuffle"),
 ):
@@ -376,6 +380,10 @@ def _archive_query(
         min_short_side=min_short_side,
         orientation=orientation,
         sized_only=sized_only,
+        tone=tone,
+        mediums=_split_csv(medium) or [],
+        year_min=year_min,
+        year_max=year_max,
         ids=_split_csv(ids) or [],
         sort=sort,
     )

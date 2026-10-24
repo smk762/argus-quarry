@@ -45,7 +45,61 @@ SLICE_MAX = 5000
 #: DuckDB memory ceiling for an index build; joins and sorts spill to disk past it.
 #: Megalith's build peaked over 14 GB unbounded, which got it OOM-killed beside other tenants.
 DEFAULT_BUILD_MEMORY = "4GB"
-ITEM_FIELDS = ("id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime")
+ITEM_FIELDS = (
+    "id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime",
+    "tone", "medium", "year",
+)  # fmt: skip
+
+#: Bumped whenever the ``items`` columns change; an older index asks to be rebuilt.
+INDEX_SCHEMA = 2
+
+# ── caption-derived columns ─────────────────────────────────────────────
+# Neither dataset records tone, medium or date per image, so they are read off
+# the recaption at index time. They are cues, not ground truth: NULL means the
+# caption doesn't say. Measured on the real archives (2026-10):
+#   tone   PD12M 29% bw / 35% color; Megalith 7% bw / 77% color
+#   medium named in the caption's opening words: PD12M ~45%; Megalith is photos by construction
+#   year   PD12M 0.5%, Megalith 1.3% of captions mention one
+_BW = "black and white|black-and-white|monochrom|grayscale|greyscale|sepia"
+_COLOUR = r"\b(red|blue|green|yellow|orange|purple|pink|brown|colou?rful|vibrant)\b"
+#: First match wins, so a "photo of a painting" is a painting (a reproduction).
+MEDIUM_RULES: tuple[tuple[str, str], ...] = (
+    ("painting", r"painting|watercolou?r|oil on canvas|fresco"),
+    ("drawing", r"drawing|sketch|illustration|cartoon"),
+    ("print", r"engraving|etching|lithograph|woodcut|\bprint\b"),
+    ("map", r"\bmap\b"),
+    ("text", r"\b(page|letter|document|text|book|manuscript|newspaper)\b"),
+    ("object", r"sculpture|statue|\bvase\b|\bcoin\b|\bobject\b"),
+    ("photo", r"photo"),
+)
+MEDIUMS = tuple(m for m, _ in MEDIUM_RULES)
+#: The first year (1500-2029) or decade ("1920s") a caption mentions.
+_YEAR = r"\b(1[5-9][0-9]{2}|20[0-2][0-9])s?\b"
+
+
+#: Where the recaptions name the medium: "The image shows a black and white photo of …",
+#: "The image is a painting of …". Only the first few words after that opener are
+#: read, so "a porcelain brush pot with a painting of a man" is not a painting.
+_OPENER = (
+    r"^(the|this) (image|picture|photo|photograph) (shows|is|depicts|features|contains|appears to be)( an?| the)? "
+)
+_HEAD_WORDS = 6
+
+
+def _derived_sql(default_medium: str | None) -> str:
+    # The head: the caption minus its opener, cut to its first _HEAD_WORDS words.
+    head = (
+        f"array_to_string(list_slice(string_split(regexp_replace(lower(caption), '{_OPENER}', ''), ' '), "
+        f"1, {_HEAD_WORDS}), ' ')"
+    )
+    mediums = " ".join(f"WHEN regexp_matches({head}, '{rx}') THEN '{m}'" for m, rx in MEDIUM_RULES)
+    default = f"'{default_medium}'" if default_medium else "NULL"
+    return (
+        f"CASE WHEN regexp_matches(lower(caption), '{_BW}') THEN 'bw' "
+        f"WHEN regexp_matches(lower(caption), '{_COLOUR}') THEN 'color' END AS tone, "
+        f"CASE {mediums} ELSE {default} END AS medium, "
+        f"TRY_CAST(nullif(regexp_extract(caption, '{_YEAR}', 1), '') AS INTEGER) AS year"
+    )
 
 
 class ArchiveUnavailable(RuntimeError):
@@ -69,6 +123,10 @@ class ArchiveQuery(BaseModel):
     min_short_side: int | None = Field(None, ge=1)
     orientation: Literal["landscape", "portrait", "square"] | None = None
     sized_only: bool = Field(False, description="only items whose dimensions are known")
+    tone: Literal["bw", "color"] | None = Field(None, description="caption-derived: black & white or colour")
+    mediums: list[str] = Field(default_factory=list, description=f"caption-derived, any of {', '.join(MEDIUMS)}")
+    year_min: int | None = Field(None, description="caption-mentioned year >= (items without one are excluded)")
+    year_max: int | None = Field(None, description="caption-mentioned year <=")
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
     sort: Literal["shuffle", "largest"] = "shuffle"
 
@@ -132,6 +190,8 @@ class Archive(ABC):
     description: str = ""
     #: Value stored as ``SourceRecord.source`` (and in the pool filename).
     source: str = "base"
+    #: Medium assumed when the caption names none (Megalith is photos by construction).
+    default_medium: str | None = None
 
     def __init__(self, config: QuarryConfig) -> None:
         self.config = config
@@ -154,12 +214,16 @@ class Archive(ABC):
             "configured": root is not None,
             "present": bool(root and root.is_dir()),
             "indexed": self.index_path.is_file(),
+            "stale": False,
             "items": None,
         }
         if info["indexed"]:
             try:
                 with self._connect() as con:
                     info["items"] = con.execute("SELECT count(*) FROM items").fetchone()[0]
+            except ArchiveUnavailable:  # built by an older quarry: present, but needs a rebuild
+                info["indexed"] = False
+                info["stale"] = True
             except Exception:  # a half-written or foreign file is "not indexed"
                 info["indexed"] = False
         return info
@@ -195,8 +259,10 @@ class Archive(ABC):
             for statement in self._stage_sql(root):
                 con.execute(statement)
             con.execute(
-                "CREATE TABLE items AS SELECT *, hash(id || 'argus') AS rnd FROM (" + self._select_sql(root) + ")"
+                f"CREATE TABLE items AS SELECT *, hash(id || 'argus') AS rnd, {_derived_sql(self.default_medium)} "
+                f"FROM ({self._select_sql(root)})"
             )
+            con.execute("CREATE TABLE meta AS SELECT ? AS schema_version, now() AS built_at", [INDEX_SCHEMA])
             con.execute(
                 "CREATE TABLE facets AS SELECT collection, count(*) AS n FROM items "
                 "WHERE collection IS NOT NULL GROUP BY collection ORDER BY n DESC"
@@ -219,7 +285,19 @@ class Archive(ABC):
     def _connect(self):
         if not self.index_path.is_file():
             raise ArchiveUnavailable(f"{self.name}: no index yet — run `argus-quarry archives index {self.name}`")
-        return _duckdb().connect(str(self.index_path), read_only=True)
+        duckdb = _duckdb()
+        con = duckdb.connect(str(self.index_path), read_only=True)
+        try:
+            version = con.execute("SELECT schema_version FROM meta").fetchone()[0]
+        except duckdb.Error:
+            version = 1
+        if version != INDEX_SCHEMA:
+            con.close()
+            raise ArchiveUnavailable(
+                f"{self.name}: index was built by an older argus-quarry (schema {version}, need {INDEX_SCHEMA}) — "
+                f"rebuild with `argus-quarry archives index {self.name}`"
+            )
+        return con
 
     @staticmethod
     def _where(query: ArchiveQuery) -> tuple[str, list[Any]]:
@@ -247,6 +325,16 @@ class Archive(ABC):
         _in("licence", query.licences)
         _in("mime", query.mimes)
         _in("id", query.ids)
+        _in("medium", query.mediums)
+        if query.tone:
+            clauses.append("tone = ?")
+            params.append(query.tone)
+        if query.year_min is not None:
+            clauses.append("year >= ?")
+            params.append(query.year_min)
+        if query.year_max is not None:
+            clauses.append("year <= ?")
+            params.append(query.year_max)
         if query.min_width:
             clauses.append("width >= ?")
             params.append(query.min_width)
@@ -295,6 +383,13 @@ class Archive(ABC):
                 "SELECT mime, count(*) FROM items WHERE mime IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
             ).fetchall()
             sized = con.execute("SELECT count(*) FROM items WHERE width IS NOT NULL").fetchone()[0]
+            tones = con.execute(
+                "SELECT tone, count(*) FROM items WHERE tone IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
+            ).fetchall()
+            mediums = con.execute(
+                "SELECT medium, count(*) FROM items WHERE medium IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
+            ).fetchall()
+            dated, year_lo, year_hi = con.execute("SELECT count(year), min(year), max(year) FROM items").fetchone()
             total = con.execute("SELECT count(*) FROM items").fetchone()[0]
         return {
             "total": total,
@@ -303,6 +398,10 @@ class Archive(ABC):
             "collections": [{"name": c, "count": n} for c, n in collections],
             "licences": [{"name": c, "count": n} for c, n in licences],
             "mimes": [{"name": c, "count": n} for c, n in mimes],
+            "tones": [{"name": c, "count": n} for c, n in tones],
+            "mediums": [{"name": c, "count": n} for c, n in mediums],
+            "dated": dated,
+            "year_range": [year_lo, year_hi] if dated else None,
         }
 
     def get(self, item_id: str) -> dict[str, Any] | None:
