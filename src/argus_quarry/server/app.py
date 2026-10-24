@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import sqlite3
 import threading
 from collections import OrderedDict
@@ -119,6 +120,7 @@ def _split_csv(value: str | None) -> list[str] | None:
 
 _UNAVAILABLE = "provenance database unavailable"
 _SERVICE = "argus-quarry"
+CORS_ORIGINS_ENV = "QUARRY_CORS_ORIGINS"  # comma-separated; what compose sets
 
 
 def _make_opener(db_path: Path):
@@ -173,6 +175,13 @@ def create_app(
     config = QuarryConfig.from_env(home=Path(home)) if home else QuarryConfig.from_env()
     if allow_fetch is not None:
         config.allow_fetch = allow_fetch
+    if cors_origins is None:
+        cors_origins = (os.environ.get(CORS_ORIGINS_ENV) or "").split(",")
+    cors_origins = [o.strip().rstrip("/") for o in cors_origins if o.strip().rstrip("/")]
+    # A listed "*" means the same as plain --cors: any origin, read-only, no
+    # credentials. It must not become an allow-list that also grants POST.
+    if "*" in cors_origins:
+        cors, cors_origins = True, []
 
     app = FastAPI(
         title="Argus Quarry",
@@ -181,7 +190,7 @@ def create_app(
         version=__version__,
     )
 
-    if cors:
+    if cors or cors_origins:
         from fastapi.middleware.cors import CORSMiddleware
 
         app.add_middleware(

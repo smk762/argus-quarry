@@ -2,6 +2,12 @@
 
 All notable changes to argus-quarry are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Versions come from git tags (`hatch-vcs`). A `v*` tag publishes the PyPI package and `ghcr.io/smk762/argus-quarry`.
 
+## [0.3.1] - 2026-10-24
+
+### Fixed
+
+- The archive slice fetch can be driven from a browser. `serve --cors` only ever allowed `*`, which never gets `POST`, so argus-studio's "Fetch into the pool" failed its CORS preflight even with `QUARRY_ALLOW_FETCH=1`. `serve` now takes `--cors-origin` (repeatable) or `QUARRY_CORS_ORIGINS` (comma-separated), and either one implies CORS. A listed `*` still means the read-only wildcard.
+
 ## [0.3.0] - 2026-10-24
 
 ### Added
@@ -76,6 +82,7 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 First release: provenance-first acquisition of public-domain / CC0 portraits from Wikimedia Commons into a SQLite-tracked raw pool, with export to a curator-ready tree.
 
+[0.3.1]: https://github.com/smk762/argus-quarry/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/smk762/argus-quarry/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/smk762/argus-quarry/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/smk762/argus-quarry/compare/v0.2.1...v0.2.2

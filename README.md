@@ -162,6 +162,7 @@ Copy `.env.example` to `.env`. Key knobs:
 | `DATASET_DIR` | `./data` | Published view `export` writes into |
 | `QUARRY_PD12M_DIR` / `QUARRY_MEGALITH_DIR` | _(unset)_ | Archived metadata for the [archives](#public-domain-archives) (`<root>/pd12m`, `<root>/megalith`) |
 | `QUARRY_ALLOW_FETCH` | _(unset = off)_ | Let `POST /archives/{name}/fetch` land a slice from the server |
+| `QUARRY_CORS_ORIGINS` | _(unset)_ | Comma-separated browser origins for `serve` (same as `--cors-origin`). Required for a studio to POST slice fetches; replaces `--cors`'s read-only `*` |
 
 ## HTTP server
 
@@ -176,6 +177,11 @@ way `/curate` talks to argus-curator on `:8101`.
 pip install "argus-quarry[server]"          # fastapi + uvicorn
 argus-quarry serve --host 0.0.0.0 --port 8102 --cors
 ```
+
+`--cors` allows any origin, read-only. The fetch route needs an explicit list,
+because `POST` is never granted to `*`: pass `--cors-origin http://localhost:3000`
+(repeatable) or set `QUARRY_CORS_ORIGINS`. A list replaces the wildcard, so name
+every origin the studio is opened from.
 
 The published image ships the `server` extra and serves by default on `:8102`:
 

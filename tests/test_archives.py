@@ -492,6 +492,21 @@ def test_cors_allows_post_only_when_fetch_is_enabled(archives_config, monkeypatc
     assert "POST" not in preflight(True)  # "*" never gets the write route
     assert "POST" in preflight(True, ["http://localhost:3000"])
     assert "POST" not in preflight(False, ["http://localhost:3000"])
+    assert "POST" not in preflight(True, ["*"])  # a listed "*" is still the read-only wildcard
+
+
+def test_cors_origins_from_env(archives_config, monkeypatch):
+    # The CLI has no other way to hand the server an origin list, so without the
+    # env var the studio's fetch button could never pass a POST preflight.
+    monkeypatch.setenv("QUARRY_CORS_ORIGINS", "http://localhost:3000/, http://192.168.1.39:3000")
+    client = TestClient(create_app(home=archives_config.home, allow_fetch=True))
+    r = client.options(
+        "/archives/pd12m/fetch",
+        headers={"Origin": "http://192.168.1.39:3000", "Access-Control-Request-Method": "POST"},
+    )
+    assert r.status_code == 200 and "POST" in r.headers["access-control-allow-methods"]
+    other = client.get("/health", headers={"Origin": "http://evil.example"})
+    assert "access-control-allow-origin" not in other.headers
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
