@@ -269,7 +269,13 @@ def subjects(
 def serve(
     port: int = Option(8102, "--port", "-p", help="Port to listen on"),
     host: str = Option("0.0.0.0", "--host", help="Host to bind to"),
-    cors: bool = Option(False, "--cors", help="Enable CORS (allow all origins)"),
+    cors: bool = Option(False, "--cors", help="Enable CORS (allow all origins, read-only)"),
+    cors_origin: list[str] = Option(
+        [],
+        "--cors-origin",
+        help="Allowed CORS origin (repeatable; implies CORS; or QUARRY_CORS_ORIGINS). "
+        "Needed for the studio to POST archive fetches, which are never granted to '*'.",
+    ),
 ) -> None:
     """Start the provenance API (FastAPI) on :8102.
 
@@ -285,7 +291,7 @@ def serve(
         typer.echo("Server requires: pip install argus-quarry[server]", err=True)
         raise typer.Exit(1) from _exc
 
-    application = create_app(cors=cors)
+    application = create_app(cors=cors, cors_origins=list(cors_origin) or None)
     uvicorn.run(application, host=host, port=port)
 
 
