@@ -23,6 +23,58 @@ def test_ingest_lands_and_is_idempotent(config):
         assert net.downloads == [url]
 
 
+def test_non_jpeg_formats_land_under_their_real_suffix(config):
+    """A TIFF/GIF/WebP is re-encoded to PNG, never landed with TIFF bytes under a .jpg name."""
+    from PIL import Image
+
+    urls = {
+        "https://img/a.tiff": make_image_bytes(seed=11, fmt="TIFF"),
+        "https://img/b.gif": make_image_bytes(seed=12, fmt="GIF"),
+        "https://img/c.webp": make_image_bytes(seed=13, fmt="WEBP"),
+        "https://img/d.jpeg": make_image_bytes(seed=14),
+        "https://img/e": make_image_bytes(seed=15, fmt="PNG"),  # no suffix in the URL
+    }
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, FakeNet(assets=urls))
+        landed = {}
+        for url in urls:
+            out = engine.ingest_record(make_record(url))
+            assert out.status == "complete", out
+            landed[url] = config.images_dir / "identity" / "Albert_Einstein" / out.filename
+    for url, path in landed.items():
+        with Image.open(path) as im:
+            assert {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG"}[path.suffix] == im.format, (url, path)
+    assert landed["https://img/a.tiff"].suffix == ".png" and landed["https://img/d.jpeg"].suffix == ".jpeg"
+    assert landed["https://img/e"].suffix == ".png"
+
+
+def test_retried_row_lands_where_its_db_row_says(config):
+    """A failed row reused by a later record keeps its category/subject, so the file is findable."""
+    url = "https://img/retry.jpg"
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, FakeNet(assets={}))  # first attempt fails: no asset
+        assert engine.ingest_record(make_record(url, subject="First", category="identity")).status == "failed"
+        engine.net = FakeNet(assets={url: make_image_bytes(seed=21)})
+        out = engine.ingest_record(make_record(url, subject="Second", category="setting"))
+        assert out.status == "complete"
+        row = store.get_photograph(out.photo_id)
+        assert (config.images_dir / row.category / row.subject / row.filename).is_file()
+
+
+def test_short_hash_filename_collision_does_not_overwrite(config, monkeypatch):
+    import argus_quarry.ingest as ingest
+
+    real = ingest._sha256_file
+    monkeypatch.setattr(ingest, "_sha256_file", lambda p: "deadbeef" + real(p)[8:])  # same 8-char prefix
+    urls = {"https://img/x1.jpg": make_image_bytes(seed=31), "https://img/x2.jpg": make_image_bytes(seed=32)}
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, FakeNet(assets=urls))
+        outs = [engine.ingest_record(make_record(u)) for u in urls]
+    assert [o.status for o in outs] == ["complete", "complete"]
+    assert outs[0].filename != outs[1].filename
+    assert all((config.images_dir / "identity" / "Albert_Einstein" / o.filename).is_file() for o in outs)
+
+
 def test_exact_duplicate_bytes_are_deduped(config):
     data = make_image_bytes(seed=7)
     a, b = "https://img/a.jpg", "https://img/b.jpg"

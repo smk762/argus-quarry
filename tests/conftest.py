@@ -50,6 +50,13 @@ class FakeNet:
         pass
 
 
+@pytest.fixture(autouse=True)
+def _isolated_env(monkeypatch):
+    """Ambient settings from a developer shell or .env must not leak into tests."""
+    for var in ("QUARRY_ALLOW_FETCH", "QUARRY_PD12M_DIR", "QUARRY_MEGALITH_DIR"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def config(tmp_path: Path) -> QuarryConfig:
     cfg = QuarryConfig(home=tmp_path / "quarry")

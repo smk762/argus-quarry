@@ -8,12 +8,16 @@ index``; slices of it land through the shared ingest pipeline.
 from __future__ import annotations
 
 from argus_quarry.archives.base import (
+    DEFAULT_BUILD_MEMORY,
+    INT_MAX,
     PAGE_MAX,
     SLICE_MAX,
     Archive,
     ArchiveQuery,
     ArchiveUnavailable,
+    IndexStale,
     SliceSpec,
+    split_collections,
 )
 from argus_quarry.archives.megalith import MegalithArchive
 from argus_quarry.archives.pd12m import PD12MArchive
@@ -42,13 +46,17 @@ def slice_command(spec_file: str = "slice.json") -> str:
 
 
 __all__ = [
+    "DEFAULT_BUILD_MEMORY",
+    "INT_MAX",
     "PAGE_MAX",
     "SLICE_MAX",
     "Archive",
     "ArchiveQuery",
     "ArchiveUnavailable",
+    "IndexStale",
     "SliceSpec",
     "available_archives",
     "get_archive",
     "slice_command",
+    "split_collections",
 ]

@@ -48,8 +48,10 @@ class PD12MArchive(Archive):
         """
 
     def to_record(self, item: dict[str, Any], *, category: str, subject: str) -> SourceRecord:
-        # "CC0" / "PDM" (Public Domain Mark) both pass the ingest licence-gate.
-        licence = {"PDM": "Public Domain Mark 1.0", "CC0": "CC0 1.0"}.get(item["licence"], item["licence"])
+        # "CC0" / "PDM" (Public Domain Mark) both pass the ingest licence-gate. A row with
+        # no licence still becomes a record, so ingest quarantines it instead of the
+        # whole slice failing validation.
+        licence = item["licence"] or "unknown"
         return SourceRecord(
             subject=subject,
             category=category,

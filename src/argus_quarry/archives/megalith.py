@@ -46,7 +46,8 @@ class MegalithArchive(Archive):
             # failed at line 143,592 of the real file, and dropped ~12k rows with
             # ignore_errors). Serial reads all 9,148,514 rows. url_source is unique in the
             # published file, so no GROUP BY here (it cost GBs over 9M long strings);
-            # build_index warns if a duplicate id ever comes through the join.
+            # build_index warns if a duplicate id ever comes through the join. Sizes are
+            # short URLs and two ints, so deduping them is cheap and keeps the join 1:1.
             stage.append(f"""
                 CREATE TEMP TABLE caps AS
                 SELECT url_source, trim(caption, ' ' || chr(9) || chr(10) || chr(13)) AS caption
@@ -58,9 +59,13 @@ class MegalithArchive(Archive):
         if any(drawthings.glob("*.parquet")):
             stage.append(f"""
                 CREATE TEMP TABLE sizes AS
-                SELECT url AS url_highres, CAST(width AS INTEGER) AS width, CAST(height AS INTEGER) AS height
-                FROM read_parquet({sql_path(drawthings / "*.parquet")})
-                WHERE status = 'success'
+                SELECT url_highres, wh.w AS width, wh.h AS height FROM (
+                    SELECT url AS url_highres,
+                           any_value({{'w': CAST(width AS INTEGER), 'h': CAST(height AS INTEGER)}}) AS wh
+                    FROM read_parquet({sql_path(drawthings / "*.parquet")})
+                    WHERE status = 'success'
+                    GROUP BY url
+                )
             """)
         else:
             stage.append("CREATE TEMP TABLE sizes (url_highres VARCHAR, width INTEGER, height INTEGER)")

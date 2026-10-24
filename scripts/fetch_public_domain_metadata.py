@@ -176,7 +176,7 @@ def main() -> int:
     )
     p.add_argument(
         "--hf-token",
-        default=os.environ.get("HF_TOKEN"),
+        default=None,  # read after parsing: as a default, --help would print the secret
         help="Hugging Face token (default: $HF_TOKEN). Optional, but avoids anonymous rate limits on large pulls",
     )
     p.add_argument("--max-workers", type=int, default=8, help="parallel file downloads per part")
@@ -187,7 +187,7 @@ def main() -> int:
     from huggingface_hub import HfApi, snapshot_download
 
     api = HfApi()
-    token = args.hf_token or None
+    token = args.hf_token or os.environ.get("HF_TOKEN") or None
     parts = selected_parts(args)
 
     planned = []

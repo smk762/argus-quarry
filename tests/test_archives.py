@@ -134,7 +134,6 @@ def ids(page: dict) -> set[str]:
 def test_unindexed_archive_says_how_to_fix(tmp_path: Path, pd12m_dir: Path):
     cfg = QuarryConfig(home=tmp_path / "q", archive_dirs={"pd12m": pd12m_dir})
     archive = get_archive("pd12m", cfg)
-    assert archive.status() | {} == archive.status()
     assert archive.status()["indexed"] is False
     with pytest.raises(ArchiveUnavailable, match="archives index pd12m"):
         archive.search(ArchiveQuery())
@@ -174,9 +173,11 @@ def test_caption_exclusions_and_phrases(archives_config):
     assert ids(pd.search(ArchiveQuery(q='-"wool coat"'))) == {"a1", "a3", "a4"}
     # unbalanced quotes fall back to whitespace splitting instead of raising
     assert ids(pd.search(ArchiveQuery(q='"unbalanced harbour'))) == set()
-    # LIKE wildcards in a term are literal, not patterns
-    assert ids(pd.search(ArchiveQuery(q="a_b"))) == set()
-    assert ids(pd.search(ArchiveQuery(q="100%"))) == set()
+    # LIKE wildcards in a term are literal, not patterns ("1923" is in a1's caption)
+    assert ids(pd.search(ArchiveQuery(q="1923"))) == {"a1"}
+    assert ids(pd.search(ArchiveQuery(q="19_3"))) == set()
+    assert ids(pd.search(ArchiveQuery(q="19%3"))) == set()
+    assert ids(pd.search(ArchiveQuery(q="harbour -19_3"))) == {"a1", "a4"}
     # uncaptioned items survive an exclusion (they do not mention the term)
     mg = get_archive("megalith", archives_config)
     assert ids(mg.search(ArchiveQuery(exclude="tram"))) == {"9001", "9002"}
@@ -192,6 +193,9 @@ def test_caption_terms_parsing():
     assert caption_terms(None) == ([], [])
     assert caption_terms('"oops harbor') == (['"oops', "harbor"], [])
     assert caption_terms("- lone dash") == (["lone", "dash"], [])
+    # apostrophes are literal, not quotes
+    assert caption_terms("children's book -men's") == (["children's", "book"], ["men's"])
+    assert caption_terms("'single quoted'") == (["'single", "quoted'"], [])
 
 
 def test_caption_derived_tone_medium_year(archives_config):
@@ -227,6 +231,94 @@ def test_index_from_older_schema_asks_for_rebuild(archives_config):
     assert status["indexed"] is False and status["stale"] is True
     with pytest.raises(ArchiveUnavailable, match="older argus-quarry"):
         pd.search(ArchiveQuery())
+
+
+def test_index_from_newer_schema_says_newer(archives_config):
+    from argus_quarry.archives.base import INDEX_SCHEMA
+
+    pd = get_archive("pd12m", archives_config)
+    con = duckdb.connect(str(pd.index_path))
+    con.execute("UPDATE meta SET schema_version = ?", [INDEX_SCHEMA + 1])
+    con.close()
+    with pytest.raises(ArchiveUnavailable, match="newer argus-quarry"):
+        pd.search(ArchiveQuery())
+
+
+def test_corrupt_index_is_unavailable_not_a_crash(archives_config, monkeypatch):
+    pd = get_archive("pd12m", archives_config)
+    pd.index_path.write_bytes(b"not a duckdb file" * 100)
+    status = pd.status()
+    assert status["indexed"] is False and status["stale"] is False  # unreadable is not "stale"
+    with pytest.raises(ArchiveUnavailable, match="unreadable"):
+        pd.search(ArchiveQuery())
+    resp = _app(archives_config, monkeypatch).get("/archives/pd12m/search")
+    assert resp.status_code == 503 and "archives index pd12m" in resp.json()["detail"]
+
+
+def test_slice_spec_rejects_unsafe_categories_and_unknown_keys():
+    from pydantic import ValidationError
+
+    for bad in ("../../etc", "a/b", "..", "x\\y", "/abs"):
+        with pytest.raises(ValidationError):
+            SliceSpec(archive="pd12m", subject="s", category=bad)
+    assert SliceSpec(archive="pd12m", subject="s", category=" Wardrobe ").category == "wardrobe"
+    with pytest.raises(ValidationError, match="limt"):
+        SliceSpec.model_validate({"archive": "pd12m", "subject": "s", "limt": 5})
+    with pytest.raises(ValidationError, match="colections"):
+        ArchiveQuery.model_validate({"colections": ["Rijksmuseum"]})
+    with pytest.raises(ValidationError, match="unknown medium"):
+        ArchiveQuery(mediums=["paintng"])
+    assert ArchiveQuery(mediums=[" Photo "]).mediums == ["photo"]
+
+
+def test_split_collections_keeps_comma_named_institutions():
+    from argus_quarry.archives import split_collections
+
+    assert split_collections("Natural History Museum, Berlin") == ["Natural History Museum, Berlin"]
+    assert split_collections("Rijksmuseum,Natural History Museum, Berlin") == [
+        "Rijksmuseum",
+        "Natural History Museum, Berlin",
+    ]
+    assert split_collections(["a,b", "Visual Media, Belgium"]) == ["a", "b", "Visual Media, Belgium"]
+    assert split_collections(None) == []
+
+
+def test_unlicensed_pd12m_row_is_quarantined_not_fatal(tmp_path):
+    from conftest import FakeNet
+
+    from argus_quarry.ingest import IngestEngine, fetch
+    from argus_quarry.store import ProvenanceStore
+
+    cols = ("id", "url", "caption", "width", "height", "mime_type", "hash", "license", "source")
+    rows = [
+        ("n1", "https://s3.example/n1.jpeg", "x", 10, 10, "image/jpeg", "h", None, "Test"),
+        ("n2", "https://s3.example/n2.jpeg", "x", 10, 10, "image/jpeg", "h", PD_ZERO, "Test"),
+    ]
+    root = tmp_path / "pd"
+    _write_parquet(root / "metadata" / "x.parquet", [dict(zip(cols, r, strict=True)) for r in rows])
+    cfg = QuarryConfig(home=tmp_path / "q", archive_dirs={"pd12m": root})
+    cfg.ensure_dirs()
+    pd = get_archive("pd12m", cfg)
+    pd.build_index()
+    records = list(pd.records(SliceSpec(archive="pd12m", subject="s")))
+    assert len(records) == 2
+    net = FakeNet(assets={"https://s3.example/n2.jpeg": make_image_bytes(32, seed=5)})
+    with ProvenanceStore(cfg.db_path) as store:
+        summary = fetch(IngestEngine(cfg, store, net), records)
+    assert (summary.quarantined, summary.complete) == (1, 1)
+
+
+def test_largest_sort_does_not_overflow_on_huge_dimensions(tmp_path):
+    cols = ("id", "url", "caption", "width", "height", "mime_type", "hash", "license", "source")
+    rows = [
+        ("big", "https://s3.example/big.jpeg", "x", 50_000, 50_000, "image/jpeg", "h", PD_ZERO, "T"),
+        ("small", "https://s3.example/small.jpeg", "x", 10, 10, "image/jpeg", "h", PD_ZERO, "T"),
+    ]
+    root = tmp_path / "pd"
+    _write_parquet(root / "metadata" / "x.parquet", [dict(zip(cols, r, strict=True)) for r in rows])
+    pd = get_archive("pd12m", QuarryConfig(home=tmp_path / "q", archive_dirs={"pd12m": root}))
+    pd.build_index()
+    assert [i["id"] for i in pd.search(ArchiveQuery(sort="largest"))["items"]] == ["big", "small"]
 
 
 def test_pd12m_facets(archives_config):
@@ -284,8 +376,18 @@ def test_rebuild_replaces_index_atomically(archives_config):
     pd = get_archive("pd12m", archives_config)
     first = pd.index_path.stat().st_ino
     assert pd.build_index() == 4
-    assert not pd.index_path.with_suffix(".duckdb.tmp").exists()
+    assert sorted(p.name for p in archives_config.archive_index_dir.iterdir()) == ["megalith.duckdb", "pd12m.duckdb"]
     assert pd.index_path.stat().st_ino != first
+
+
+def test_build_temp_file_is_not_the_readers_spill_dir(archives_config):
+    """DuckDB's default temp dir for a reader of X.duckdb is X.duckdb.tmp; a build must not use it."""
+    pd = get_archive("pd12m", archives_config)
+    spill = pd.index_path.with_suffix(".duckdb.tmp")
+    spill.mkdir()
+    (spill / "spilled").write_bytes(b"x")  # a reader spilling while we rebuild
+    assert pd.build_index() == 4
+    assert (spill / "spilled").exists()
 
 
 # ── server ────────────────────────────────────────────────────────────
@@ -378,8 +480,8 @@ def test_thumbs(archives_config, monkeypatch):
 
 
 def test_cors_allows_post_only_when_fetch_is_enabled(archives_config, monkeypatch):
-    def preflight(allow: bool) -> str:
-        app = create_app(home=archives_config.home, cors=True, allow_fetch=allow)
+    def preflight(allow: bool, origins: list[str] | None = None) -> str:
+        app = create_app(home=archives_config.home, cors=True, cors_origins=origins, allow_fetch=allow)
         r = TestClient(app).options(
             "/archives/pd12m/fetch",
             headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST"},
@@ -387,7 +489,9 @@ def test_cors_allows_post_only_when_fetch_is_enabled(archives_config, monkeypatc
         return r.headers.get("access-control-allow-methods", "")
 
     assert "POST" not in preflight(False)
-    assert "POST" in preflight(True)
+    assert "POST" not in preflight(True)  # "*" never gets the write route
+    assert "POST" in preflight(True, ["http://localhost:3000"])
+    assert "POST" not in preflight(False, ["http://localhost:3000"])
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
@@ -414,7 +518,7 @@ def test_failed_build_leaves_no_temp_file_and_keeps_old_index(archives_config, m
     (megalith_dir / "links" / "data" / "megalith-00001-of-00010.parquet").write_bytes(b"not parquet")
     with pytest.raises(ArchiveUnavailable, match="index build failed"):
         mg.build_index()
-    assert not mg.index_path.with_suffix(".duckdb.tmp").exists()
+    assert sorted(p.name for p in archives_config.archive_index_dir.iterdir()) == ["megalith.duckdb", "pd12m.duckdb"]
     assert mg.index_path.stat().st_ino == before and mg.status()["items"] == 3
 
 
@@ -422,10 +526,14 @@ def test_server_and_slice_carry_exclusions(archives_config, monkeypatch):
     client = _app(archives_config, monkeypatch)
     page = client.get("/archives/pd12m/search", params={"q": "harbour", "exclude": "fog"}).json()
     assert [i["id"] for i in page["items"]] == ["a1"]
-    derived = client.get(
-        "/archives/pd12m/search", params={"tone": "color", "medium": "photo,painting", "year_min": 1980}
-    ).json()
-    assert [i["id"] for i in derived["items"]] == ["a3"]
+    derived = client.get("/archives/pd12m/search", params={"tone": "color", "medium": "photo,painting"}).json()
+    assert {i["id"] for i in derived["items"]} == {"a2", "a3"}  # tone drops a1 (bw), medium drops a4
+    assert ids(client.get("/archives/pd12m/search", params={"medium": "painting"}).json()) == {"a2"}
+    assert ids(client.get("/archives/pd12m/search", params={"tone": "bw"}).json()) == {"a1"}
+    assert ids(client.get("/archives/pd12m/search", params={"year_min": 1980}).json()) == {"a3"}
+    assert client.get("/archives/pd12m/search", params={"medium": "paintng"}).status_code == 422
+    assert client.get("/archives/pd12m/search", params={"year_min": 2**40}).status_code == 422
+    assert client.get("/archives/pd12m/slice", params={"subject": "h", "category": "../x"}).status_code == 422
     plan = client.get("/archives/pd12m/slice", params={"q": "harbour -fog", "subject": "h"}).json()
     assert plan["matches"] == 1 and plan["slice"]["query"]["q"] == "harbour -fog"
 
@@ -437,6 +545,8 @@ def test_medium_is_read_from_the_caption_head_only(tmp_path):
         "m2": "The image is a black and white photo of a harbor.",
         "m3": "The image shows an old drawing of a castle on a hill.",
         "m4": "A watercolour of a lake at dusk.",
+        "m5": "The photo shows a harbor at dawn.",
+        "m6": "This photograph is of an old oil painting of a ship.",
     }
     rows = [
         (k, f"https://s3.example/{k}.jpeg", c, 800, 600, "image/jpeg", k, PD_ZERO, "Test") for k, c in captions.items()
@@ -447,4 +557,56 @@ def test_medium_is_read_from_the_caption_head_only(tmp_path):
     pd = get_archive("pd12m", cfg)
     pd.build_index()
     got = {i["id"]: i["medium"] for i in pd.search(ArchiveQuery())["items"]}
-    assert got == {"m1": None, "m2": "photo", "m3": "drawing", "m4": "painting"}
+    assert got == {"m1": None, "m2": "photo", "m3": "drawing", "m4": "painting", "m5": "photo", "m6": "painting"}
+
+
+def test_thumb_refuses_huge_non_jpeg_originals(archives_config, monkeypatch):
+    import io
+
+    from PIL import Image
+
+    import argus_quarry.server.app as server_app
+
+    monkeypatch.setattr(server_app, "ARCHIVE_THUMB_MAX_PIXELS", 100 * 100)
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 200)).save(buf, "PNG")  # small file, too many pixels
+    client = _app(archives_config, monkeypatch, thumb_fetcher=lambda _url: buf.getvalue())
+    resp = client.get("/archives/pd12m/thumb", params={"id": "a3"})
+    assert resp.status_code == 502 and "too large" in resp.json()["detail"]
+    jpeg = make_image_bytes(200, seed=4)  # JPEG decodes at reduced scale, so the cap does not apply
+    client = _app(archives_config, monkeypatch, thumb_fetcher=lambda _url: jpeg)
+    assert client.get("/archives/pd12m/thumb", params={"id": "a1"}).status_code == 200
+
+
+def test_megalith_duplicate_size_rows_do_not_duplicate_items(tmp_path, megalith_dir):
+    rows = [
+        {"url": "https://farm1.staticflickr.com/1/9001_abc_b.jpg", "status": "success", "width": 1024, "height": 683}
+    ]
+    _write_parquet(megalith_dir / "drawthings" / "00001.parquet", rows)  # 9001 now listed twice
+    mg = get_archive("megalith", QuarryConfig(home=tmp_path / "q", archive_dirs={"megalith": megalith_dir}))
+    assert mg.build_index() == 3
+
+
+def test_cli_archive_errors_are_one_line_not_tracebacks(tmp_path, pd12m_dir, monkeypatch):
+    pytest.importorskip("typer")
+    from typer.testing import CliRunner
+
+    from argus_quarry.cli import app
+
+    monkeypatch.setenv("QUARRY_HOME", str(tmp_path / "quarry"))
+    monkeypatch.setenv("QUARRY_PD12M_DIR", str(pd12m_dir))
+    runner = CliRunner()
+    for args, needle in (
+        (["archives", "search", "pd12m"], "archives index pd12m"),  # not indexed yet
+        (["archives", "search", "flickr"], "unknown archive"),
+        (["archives", "index", "flickr"], "unknown archive"),
+        (["archives", "fetch", str(tmp_path / "missing.json")], "missing.json"),
+    ):
+        result = runner.invoke(app, args)
+        assert result.exit_code == 2, (args, result.output)
+        assert needle in result.output and "Traceback" not in result.output, (args, result.output)
+        assert isinstance(result.exception, SystemExit), (args, result.exception)
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"archive": "pd12m", "subject": "s", "category": "../../x"}))
+    result = runner.invoke(app, ["archives", "fetch", str(bad)])
+    assert result.exit_code == 2 and "category" in result.output

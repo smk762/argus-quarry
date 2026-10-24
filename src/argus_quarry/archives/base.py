@@ -25,15 +25,16 @@ licence-gate, SHA256 dedup and provenance stay in :mod:`argus_quarry.ingest`.
 from __future__ import annotations
 
 import os
-import shlex
+import re
 import shutil
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
 import structlog
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import DEFAULT_CATEGORY, SourceRecord, normalise_category, slugify_name
@@ -45,13 +46,16 @@ SLICE_MAX = 5000
 #: DuckDB memory ceiling for an index build; joins and sorts spill to disk past it.
 #: Megalith's build peaked over 14 GB unbounded, which got it OOM-killed beside other tenants.
 DEFAULT_BUILD_MEMORY = "4GB"
+#: Upper bound for integer filters: DuckDB binds them as INTEGER, so larger values would error.
+INT_MAX = 2**31 - 1
 ITEM_FIELDS = (
     "id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime",
     "tone", "medium", "year",
 )  # fmt: skip
 
-#: Bumped whenever the ``items`` columns change; an older index asks to be rebuilt.
-INDEX_SCHEMA = 2
+#: Bumped whenever the ``items`` columns, or how they are derived, change; an older index asks to be
+#: rebuilt. 3: "The photo shows …" openers count as medium photo.
+INDEX_SCHEMA = 3
 
 # ── caption-derived columns ─────────────────────────────────────────────
 # Neither dataset records tone, medium or date per image, so they are read off
@@ -84,6 +88,8 @@ _OPENER = (
     r"^(the|this) (image|picture|photo|photograph) (shows|is|depicts|features|contains|appears to be)( an?| the)? "
 )
 _HEAD_WORDS = 6
+#: The opener itself can name the medium ("The photo shows …"); checked after the head rules.
+_PHOTO_OPENER = r"^(the|this) (photo|photograph) "
 
 
 def _derived_sql(default_medium: str | None) -> str:
@@ -97,7 +103,8 @@ def _derived_sql(default_medium: str | None) -> str:
     return (
         f"CASE WHEN regexp_matches(lower(caption), '{_BW}') THEN 'bw' "
         f"WHEN regexp_matches(lower(caption), '{_COLOUR}') THEN 'color' END AS tone, "
-        f"CASE {mediums} ELSE {default} END AS medium, "
+        f"CASE {mediums} WHEN regexp_matches(lower(caption), '{_PHOTO_OPENER}') THEN 'photo' "
+        f"ELSE {default} END AS medium, "
         f"TRY_CAST(nullif(regexp_extract(caption, '{_YEAR}', 1), '') AS INTEGER) AS year"
     )
 
@@ -106,8 +113,14 @@ class ArchiveUnavailable(RuntimeError):
     """The archive dir is unset/missing, or its index has not been built yet."""
 
 
+class IndexStale(ArchiveUnavailable):
+    """The index exists but was built for a different schema: it needs a rebuild."""
+
+
 class ArchiveQuery(BaseModel):
     """Filters shared by every archive; fields an archive lacks simply match nothing extra."""
+
+    model_config = ConfigDict(extra="forbid")
 
     q: str | None = Field(
         None,
@@ -118,17 +131,32 @@ class ArchiveQuery(BaseModel):
     collections: list[str] = Field(default_factory=list, description="PD12M institutions / Flickr owners")
     licences: list[str] = Field(default_factory=list, description="raw licence labels, e.g. CC0, PDM")
     mimes: list[str] = Field(default_factory=list, description="e.g. image/jpeg")
-    min_width: int | None = Field(None, ge=1)
-    min_height: int | None = Field(None, ge=1)
-    min_short_side: int | None = Field(None, ge=1)
+    min_width: int | None = Field(None, ge=1, le=INT_MAX)
+    min_height: int | None = Field(None, ge=1, le=INT_MAX)
+    min_short_side: int | None = Field(None, ge=1, le=INT_MAX)
     orientation: Literal["landscape", "portrait", "square"] | None = None
     sized_only: bool = Field(False, description="only items whose dimensions are known")
     tone: Literal["bw", "color"] | None = Field(None, description="caption-derived: black & white or colour")
     mediums: list[str] = Field(default_factory=list, description=f"caption-derived, any of {', '.join(MEDIUMS)}")
-    year_min: int | None = Field(None, description="caption-mentioned year >= (items without one are excluded)")
-    year_max: int | None = Field(None, description="caption-mentioned year <=")
+    year_min: int | None = Field(
+        None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year >= (items without one are excluded)"
+    )
+    year_max: int | None = Field(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year <=")
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
     sort: Literal["shuffle", "largest"] = "shuffle"
+
+    @field_validator("mediums")
+    @classmethod
+    def _mediums(cls, v: list[str]) -> list[str]:
+        v = [m.strip().lower() for m in v]
+        unknown = sorted(set(v) - set(MEDIUMS))
+        if unknown:
+            raise ValueError(f"unknown medium(s) {', '.join(unknown)}; expected any of {', '.join(MEDIUMS)}")
+        return v
+
+
+#: A ``-``-prefixed or plain ``"quoted phrase"``, else a bare whitespace-separated word.
+_TERM_RE = re.compile(r'(-?)"([^"]*)"|(\S+)')
 
 
 def caption_terms(text: str | None) -> tuple[list[str], list[str]]:
@@ -136,26 +164,30 @@ def caption_terms(text: str | None) -> tuple[list[str], list[str]]:
 
     Whitespace separates terms, ``"double quotes"`` keep a phrase whole, and a
     leading ``-`` (``-painting``, ``-"black and white"``) marks a term excluded.
-    Unbalanced quotes fall back to plain whitespace splitting rather than failing.
+    Only double quotes group, so apostrophes (``children's``) stay literal; an
+    unbalanced ``"`` is kept as part of a plain word rather than failing.
     """
     if not text or not text.strip():
         return [], []
-    try:
-        tokens = shlex.split(text)
-    except ValueError:
-        tokens = text.split()
     required: list[str] = []
     excluded: list[str] = []
-    for token in tokens:
-        if token.startswith("-") and len(token) > 1:
-            excluded.append(token[1:])
-        elif token and token != "-":
-            required.append(token)
+    for m in _TERM_RE.finditer(text):
+        negated, phrase, word = m.groups()
+        if word is None:
+            token = phrase.strip()
+        elif word.startswith("-") and len(word) > 1:
+            negated, token = "-", word[1:]
+        else:
+            token = "" if word == "-" else word
+        if token:
+            (excluded if negated else required).append(token)
     return required, excluded
 
 
 class SliceSpec(BaseModel):
     """A query plus where its images land — the unit the UI saves and ``archives fetch`` runs."""
+
+    model_config = ConfigDict(extra="forbid")
 
     archive: str
     query: ArchiveQuery = Field(default_factory=ArchiveQuery)
@@ -166,12 +198,34 @@ class SliceSpec(BaseModel):
     @field_validator("category")
     @classmethod
     def _category(cls, v: str) -> str:
-        return normalise_category(v)
+        # The category becomes a directory under images/: never let it climb out.
+        v = normalise_category(v)
+        if not _CATEGORY_RE.fullmatch(v):
+            raise ValueError(f"category {v!r} must be letters, digits, '_' or '-'")
+        return v
 
     @field_validator("subject")
     @classmethod
     def _subject(cls, v: str) -> str:
         return slugify_name(v)
+
+
+_CATEGORY_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
+
+
+def split_collections(values: list[str] | str | None) -> list[str]:
+    """Collection names from repeated params and/or one comma-joined value.
+
+    Only a comma *not* followed by whitespace separates: institution names such as
+    "Natural History Museum, Berlin" (55 of PD12M's 640) always put a space after
+    theirs, while joined lists ("Rijksmuseum,iNaturalist") do not.
+    """
+    if values is None:
+        return []
+    out: list[str] = []
+    for value in [values] if isinstance(values, str) else values:
+        out += [v.strip() for v in re.split(r",(?!\s)", value) if v.strip()]
+    return out
 
 
 def _duckdb():
@@ -221,10 +275,10 @@ class Archive(ABC):
             try:
                 with self._connect() as con:
                     info["items"] = con.execute("SELECT count(*) FROM items").fetchone()[0]
-            except ArchiveUnavailable:  # built by an older quarry: present, but needs a rebuild
+            except IndexStale:  # built for another schema: present, but needs a rebuild
                 info["indexed"] = False
                 info["stale"] = True
-            except Exception:  # a half-written or foreign file is "not indexed"
+            except Exception:  # duckdb missing, or a half-written/foreign file: "not indexed"
                 info["indexed"] = False
         return info
 
@@ -245,9 +299,11 @@ class Archive(ABC):
             raise ArchiveUnavailable(f"{self.name}: set QUARRY_{self.name.upper()}_DIR to the archived metadata")
         duckdb = _duckdb()
         self.config.archive_index_dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.index_path.with_suffix(".duckdb.tmp")
-        tmp.unlink(missing_ok=True)
-        spill = self.config.archive_index_dir / f".{self.name}.spill"
+        # Per-build names: two overlapping builds must not share (and delete) each other's
+        # temp file, and "<name>.duckdb.tmp" is DuckDB's default spill dir for readers.
+        token = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        tmp = self.config.archive_index_dir / f".{self.name}.{token}.building.duckdb"
+        spill = self.config.archive_index_dir / f".{self.name}.{token}.spill"
         con = duckdb.connect(str(tmp))
         built = False
         try:
@@ -278,6 +334,7 @@ class Archive(ABC):
             shutil.rmtree(spill, ignore_errors=True)
             if not built:  # never leave a half-built index behind
                 tmp.unlink(missing_ok=True)
+                tmp.with_name(tmp.name + ".wal").unlink(missing_ok=True)
         os.replace(tmp, self.index_path)
         return n
 
@@ -286,16 +343,27 @@ class Archive(ABC):
         if not self.index_path.is_file():
             raise ArchiveUnavailable(f"{self.name}: no index yet — run `argus-quarry archives index {self.name}`")
         duckdb = _duckdb()
-        con = duckdb.connect(str(self.index_path), read_only=True)
+        rebuild = f"rebuild with `argus-quarry archives index {self.name}`"
         try:
-            version = con.execute("SELECT schema_version FROM meta").fetchone()[0]
-        except duckdb.Error:
-            version = 1
+            con = duckdb.connect(str(self.index_path), read_only=True)
+        except duckdb.Error as exc:
+            raise ArchiveUnavailable(f"{self.name}: index is unreadable ({exc}) — {rebuild}") from exc
+        try:
+            try:
+                version = con.execute("SELECT schema_version FROM meta").fetchone()[0]
+            except duckdb.CatalogException:  # schema 1 had no meta table
+                version = 1
+        except BaseException as exc:
+            con.close()
+            if isinstance(exc, duckdb.Error):
+                raise ArchiveUnavailable(f"{self.name}: index is unreadable ({exc}) — {rebuild}") from exc
+            raise
         if version != INDEX_SCHEMA:
             con.close()
-            raise ArchiveUnavailable(
-                f"{self.name}: index was built by an older argus-quarry (schema {version}, need {INDEX_SCHEMA}) — "
-                f"rebuild with `argus-quarry archives index {self.name}`"
+            age = "a newer" if isinstance(version, int) and version > INDEX_SCHEMA else "an older"
+            raise IndexStale(
+                f"{self.name}: index was built by {age} argus-quarry (schema {version}, need {INDEX_SCHEMA}) — "
+                f"{rebuild}"
             )
         return con
 
@@ -356,7 +424,11 @@ class Archive(ABC):
 
     @staticmethod
     def _order(query: ArchiveQuery) -> str:
-        return " ORDER BY width * height DESC NULLS LAST, rnd" if query.sort == "largest" else " ORDER BY rnd"
+        # BIGINT: two INTEGER sides multiply as INTEGER and overflow past ~46k x 46k.
+        # id breaks rnd ties so paging and slices are deterministic.
+        if query.sort == "largest":
+            return " ORDER BY width::BIGINT * height DESC NULLS LAST, rnd, id"
+        return " ORDER BY rnd, id"
 
     def search(self, query: ArchiveQuery, *, limit: int = 48, offset: int = 0) -> dict[str, Any]:
         limit = max(1, min(limit, PAGE_MAX))
@@ -416,18 +488,19 @@ class Archive(ABC):
 
     # ── slice -> SourceRecord stream ──────────────────────────────────
     def records(self, spec: SliceSpec) -> Iterator[SourceRecord]:
-        """The slice's items, in the query's order, as ingest-ready records."""
-        page = self.search(spec.query, limit=min(spec.limit, PAGE_MAX), offset=0)
-        yielded = 0
-        offset = 0
-        while page["items"] and yielded < spec.limit:
-            for item in page["items"]:
-                if yielded >= spec.limit:
-                    return
-                yield self.to_record(item, category=spec.category, subject=spec.subject)
-                yielded += 1
-            offset += len(page["items"])
-            page = self.search(spec.query, limit=min(spec.limit - yielded, PAGE_MAX) or 1, offset=offset)
+        """The slice's items, in the query's order, as ingest-ready records.
+
+        One query, read up front (a slice is at most ``SLICE_MAX`` rows), so the index
+        connection is not held open while ingest downloads.
+        """
+        where, params = self._where(spec.query)
+        with self._connect() as con:
+            rows = con.execute(
+                f"SELECT {', '.join(ITEM_FIELDS)} FROM items{where}{self._order(spec.query)} LIMIT ?",
+                [*params, spec.limit],
+            ).fetchall()
+        for row in rows:
+            yield self.to_record(dict(zip(ITEM_FIELDS, row, strict=True)), category=spec.category, subject=spec.subject)
 
     @abstractmethod
     def to_record(self, item: dict[str, Any], *, category: str, subject: str) -> SourceRecord:

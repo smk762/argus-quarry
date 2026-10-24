@@ -53,9 +53,11 @@ except ImportError as exc:  # pragma: no cover
 
 import structlog
 from PIL import Image
+from pydantic import ValidationError
 
 from argus_quarry import __version__
 from argus_quarry.archives import (
+    INT_MAX,
     SLICE_MAX,
     ArchiveQuery,
     ArchiveUnavailable,
@@ -63,9 +65,10 @@ from argus_quarry.archives import (
     available_archives,
     get_archive,
     slice_command,
+    split_collections,
 )
 from argus_quarry.config import QuarryConfig
-from argus_quarry.models import Photograph
+from argus_quarry.models import DEFAULT_CATEGORY, Photograph
 from argus_quarry.store import ProvenanceStore, ProvenanceUnavailable, has_wal_content
 
 logger = structlog.get_logger()
@@ -76,6 +79,9 @@ PAGE_DEFAULT = 100  # /photos page size
 PAGE_MAX = 500
 ARCHIVE_THUMB_CACHE = 512  # rendered archive thumbs kept in memory (never written to disk)
 ARCHIVE_THUMB_MAX_BYTES = 40 * 1024 * 1024  # skip pathological originals instead of decoding them
+#: Pixel ceiling for non-JPEG originals (JPEG decodes at reduced scale via draft()).
+#: A 40 MB PNG/TIFF can still expand to GBs once decoded.
+ARCHIVE_THUMB_MAX_PIXELS = 50_000_000
 
 # The wire shape for a photograph (``subject_id`` / ``phash`` stay internal).
 _PHOTO_FIELDS = (
@@ -159,7 +165,7 @@ def create_app(
     net_factory=None,  # noqa: ANN001 - Callable[[QuarryConfig], NetClient]; tests inject an offline one
     thumb_fetcher=None,  # noqa: ANN001 - Callable[[str], bytes]; None = httpx GET with the polite UA
 ) -> FastAPI:
-    """Create the read-only quarry FastAPI application.
+    """Create the quarry FastAPI application: read-only, except the opt-in archive fetch.
 
     ``home`` overrides the pool root; by default it is resolved from the
     ``QUARRY_HOME`` env var (falling back to ``./quarry``), exactly like the CLI.
@@ -170,7 +176,8 @@ def create_app(
 
     app = FastAPI(
         title="Argus Quarry",
-        description="Read-only provenance queries over the raw public-domain/CC0 image pool.",
+        description="Provenance queries over the raw public-domain/CC0 image pool (read-only, except the "
+        "opt-in archive slice fetch).",
         version=__version__,
     )
 
@@ -185,8 +192,9 @@ def create_app(
             # would let any site read the API with the caller's cookies.
             allow_credentials=bool(cors_origins),
             # Read-only surface; POST only exists when the operator opted in to
-            # archive slice fetches.
-            allow_methods=["GET", "HEAD", "POST"] if config.allow_fetch else ["GET", "HEAD"],
+            # archive slice fetches, and is never granted to "*": any site could
+            # otherwise drive pool writes from a visitor's browser.
+            allow_methods=["GET", "HEAD", "POST"] if config.allow_fetch and cors_origins else ["GET", "HEAD"],
             allow_headers=["*"],
         )
 
@@ -354,39 +362,44 @@ _FETCH_REFUSAL = (
 def _archive_query(
     q: str | None = Query(None, description='caption terms, all must match; "phrases" and -excluded terms'),
     exclude: str | None = Query(None, description="caption terms none of which may appear"),
-    collection: str | None = Query(None, description="comma-separated institutions / Flickr owners"),
+    collection: list[str] | None = Query(
+        None, description="institutions / Flickr owners: repeat the param, or comma-join (no space after the comma)"
+    ),
     licence: str | None = Query(None, description="comma-separated licence labels, e.g. CC0,PDM"),
     mime: str | None = Query(None, description="comma-separated MIME types"),
-    min_width: int | None = Query(None, ge=1),
-    min_height: int | None = Query(None, ge=1),
-    min_short_side: int | None = Query(None, ge=1),
+    min_width: int | None = Query(None, ge=1, le=INT_MAX),
+    min_height: int | None = Query(None, ge=1, le=INT_MAX),
+    min_short_side: int | None = Query(None, ge=1, le=INT_MAX),
     orientation: Literal["landscape", "portrait", "square"] | None = Query(None),
     sized_only: bool = Query(False, description="only items whose dimensions are known"),
     tone: Literal["bw", "color"] | None = Query(None, description="caption-derived: bw or color"),
     medium: str | None = Query(None, description="comma-separated caption-derived mediums, e.g. photo,painting"),
-    year_min: int | None = Query(None, description="caption-mentioned year >="),
-    year_max: int | None = Query(None, description="caption-mentioned year <="),
+    year_min: int | None = Query(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year >="),
+    year_max: int | None = Query(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year <="),
     ids: str | None = Query(None, description="comma-separated explicit selection"),
     sort: Literal["shuffle", "largest"] = Query("shuffle"),
 ):
-    return ArchiveQuery(
-        q=q,
-        exclude=exclude,
-        collections=_split_csv(collection) or [],
-        licences=_split_csv(licence) or [],
-        mimes=_split_csv(mime) or [],
-        min_width=min_width,
-        min_height=min_height,
-        min_short_side=min_short_side,
-        orientation=orientation,
-        sized_only=sized_only,
-        tone=tone,
-        mediums=_split_csv(medium) or [],
-        year_min=year_min,
-        year_max=year_max,
-        ids=_split_csv(ids) or [],
-        sort=sort,
-    )
+    try:
+        return ArchiveQuery(
+            q=q,
+            exclude=exclude,
+            collections=split_collections(collection),
+            licences=_split_csv(licence) or [],
+            mimes=_split_csv(mime) or [],
+            min_width=min_width,
+            min_height=min_height,
+            min_short_side=min_short_side,
+            orientation=orientation,
+            sized_only=sized_only,
+            tone=tone,
+            mediums=_split_csv(medium) or [],
+            year_min=year_min,
+            year_max=year_max,
+            ids=_split_csv(ids) or [],
+            sort=sort,
+        )
+    except ValidationError as exc:  # e.g. an unknown medium: the caller's mistake, not a 500
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False)) from exc
 
 
 def _fetch_original(config: QuarryConfig, url: str) -> bytes:
@@ -460,6 +473,11 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
     ) -> Response:
         size = min(size, THUMB_MAX)
         archive = _archive(name)
+        key = (name, id, size)
+        with thumbs_lock:  # only rendered thumbs are cached, so a hit needs no index lookup
+            if key in thumbs:
+                thumbs.move_to_end(key)
+                return Response(content=thumbs[key], media_type="image/webp")
         item = await _run(archive.get, id)
         if item is None:
             raise HTTPException(status_code=404, detail=f"no item {id!r} in {name}")
@@ -467,15 +485,11 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
         if item.get("thumb_url"):
             return RedirectResponse(item["thumb_url"], status_code=307)
 
-        key = (name, id, size)
-        with thumbs_lock:
-            if key in thumbs:
-                thumbs.move_to_end(key)
-                return Response(content=thumbs[key], media_type="image/webp")
-
         def _render() -> bytes:
             raw = thumb_fetcher(item["url"]) if thumb_fetcher else _fetch_original(config, item["url"])
             with Image.open(io.BytesIO(raw)) as img:
+                if img.format != "JPEG" and img.width * img.height > ARCHIVE_THUMB_MAX_PIXELS:
+                    raise ValueError(f"original too large to thumbnail ({img.width}x{img.height})")
                 img.draft("RGB", (size, size))  # JPEG: decode at reduced scale, not full size
                 img = img.convert("RGB")
                 img.thumbnail((size, size))
@@ -497,12 +511,15 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
     async def archive_slice(
         name: str,
         query: ArchiveQuery = Depends(_archive_query),
-        category: str = Query("identity"),
+        category: str = Query(DEFAULT_CATEGORY),
         subject: str = Query(..., min_length=1),
         limit: int = Query(100, ge=1, le=SLICE_MAX),
     ) -> dict[str, Any]:
         """The slice as a saveable spec, its match count, and the CLI command that lands it."""
-        spec = SliceSpec(archive=name, query=query, category=category, subject=subject, limit=limit)
+        try:
+            spec = SliceSpec(archive=name, query=query, category=category, subject=subject, limit=limit)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False)) from exc
         matches = await _run(_archive(name).count, spec.query)
         return {
             "slice": spec.model_dump(mode="json"),
@@ -527,10 +544,13 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
                     "command": slice_command(),
                 },
             )
-        total = await _run(archive.count, spec.query)
-        total = min(total, spec.limit)
         if not fetch_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="another archive fetch is already running")
+        try:
+            total = min(await _run(archive.count, spec.query), spec.limit)
+        except BaseException:
+            fetch_lock.release()
+            raise
 
         loop = asyncio.get_running_loop()
         frames: asyncio.Queue[dict | None] = asyncio.Queue()

@@ -20,13 +20,19 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
     Results come in a fixed shuffle or largest-first.
   - CLI: `archives status | index | search | fetch slice.json [--dry-run]`.
   - Server: `GET /archives`, `/archives/{name}/facets`, `/search`, `/items/{id}`, `/thumb` (PD12M thumbnails are rendered in memory; Megalith thumbnails redirect to Flickr's 500 px rendition) and `/slice`, which returns the saveable spec plus the CLI command.
-  - **`POST /archives/{name}/fetch`** lands a slice and streams NDJSON progress. It is the server's one write route and is **off unless `QUARRY_ALLOW_FETCH=1`**. When off, it answers 403 with the slice and the CLI command. CORS allows `POST` only while fetch is enabled.
+  - **`POST /archives/{name}/fetch`** lands a slice and streams NDJSON progress. It is the server's one write route and is **off unless `QUARRY_ALLOW_FETCH=1`**. When off, it answers 403 with the slice and the CLI command. CORS allows `POST` only while fetch is enabled, and only to an explicit origin list, never `*`.
   - New `archives` extra (duckdb), included in `all`, `dev` and the image.
 
 ### Changed
 
 - The server is no longer strictly read-only. The archive slice fetch above is a deliberate, opt-in exception, recorded in DESIGN.md §9 and pinned by `tests/test_server.py::OPT_IN_WRITE_ROUTES`. The provenance routes are unchanged.
 - `GET /health` reports `fetch_allowed`.
+
+### Fixed
+
+- Ingest lands TIFF, GIF and WebP originals re-encoded as PNG. Before, they kept their bytes under a `.jpg` name.
+- A failed row that a later record retries now lands under the row's own category and subject, which is where the DB and `export` look for it.
+- Two different files whose SHA256 shares its first 8 characters no longer overwrite each other in the pool. The second gets the full hash in its name.
 
 ### Security
 
