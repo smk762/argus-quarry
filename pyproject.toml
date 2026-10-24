@@ -28,6 +28,9 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.27",
+    # httpx verifies against certifi. 2026.10.19 drops emSign ECC Root CA - G3
+    # (discuss.python.org/t/109576) and keeps the unaffected emSign roots.
+    "certifi>=2026.10.19",
     "pydantic>=2.6",
     "structlog>=24.0",
     "Pillow>=10.0",
