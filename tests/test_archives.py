@@ -154,6 +154,36 @@ def test_pd12m_index_and_filters(archives_config):
     assert pd.search(ArchiveQuery(), limit=2)["items"] == pd.search(ArchiveQuery(), limit=2)["items"]
 
 
+def test_caption_exclusions_and_phrases(archives_config):
+    pd = get_archive("pd12m", archives_config)
+    assert ids(pd.search(ArchiveQuery(q="harbour", exclude="fog"))) == {"a1"}
+    assert ids(pd.search(ArchiveQuery(q="harbour -fog"))) == {"a1"}  # inline negative
+    assert ids(pd.search(ArchiveQuery(exclude="harbour beetle"))) == {"a2"}  # every exclude term is negative
+    assert ids(pd.search(ArchiveQuery(q='"fishing boats"'))) == {"a1"}  # phrase kept whole
+    assert ids(pd.search(ArchiveQuery(q='"boats fishing"'))) == set()
+    assert ids(pd.search(ArchiveQuery(q='-"wool coat"'))) == {"a1", "a3", "a4"}
+    # unbalanced quotes fall back to whitespace splitting instead of raising
+    assert ids(pd.search(ArchiveQuery(q='"unbalanced harbour'))) == set()
+    # LIKE wildcards in a term are literal, not patterns
+    assert ids(pd.search(ArchiveQuery(q="a_b"))) == set()
+    assert ids(pd.search(ArchiveQuery(q="100%"))) == set()
+    # uncaptioned items survive an exclusion (they do not mention the term)
+    mg = get_archive("megalith", archives_config)
+    assert ids(mg.search(ArchiveQuery(exclude="tram"))) == {"9001", "9002"}
+
+
+def test_caption_terms_parsing():
+    from argus_quarry.archives.base import caption_terms
+
+    assert caption_terms('red "wool coat" -painting -"black and white"') == (
+        ["red", "wool coat"],
+        ["painting", "black and white"],
+    )
+    assert caption_terms(None) == ([], [])
+    assert caption_terms('"oops harbor') == (['"oops', "harbor"], [])
+    assert caption_terms("- lone dash") == (["lone", "dash"], [])
+
+
 def test_pd12m_facets(archives_config):
     f = get_archive("pd12m", archives_config).facets()
     assert f["total"] == 4 and f["sized"] == 4 and f["n_collections"] == 3
@@ -341,3 +371,11 @@ def test_failed_build_leaves_no_temp_file_and_keeps_old_index(archives_config, m
         mg.build_index()
     assert not mg.index_path.with_suffix(".duckdb.tmp").exists()
     assert mg.index_path.stat().st_ino == before and mg.status()["items"] == 3
+
+
+def test_server_and_slice_carry_exclusions(archives_config, monkeypatch):
+    client = _app(archives_config, monkeypatch)
+    page = client.get("/archives/pd12m/search", params={"q": "harbour", "exclude": "fog"}).json()
+    assert [i["id"] for i in page["items"]] == ["a1"]
+    plan = client.get("/archives/pd12m/slice", params={"q": "harbour -fog", "subject": "h"}).json()
+    assert plan["matches"] == 1 and plan["slice"]["query"]["q"] == "harbour -fog"

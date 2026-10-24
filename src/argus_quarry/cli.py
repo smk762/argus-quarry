@@ -342,7 +342,8 @@ def archives_index(
 @archives_app.command("search")
 def archives_search(
     name: str = typer.Argument(..., help="pd12m or megalith"),
-    q: str | None = Option(None, "--q", help="Caption words (all must match)"),
+    q: str | None = Option(None, "--q", help='Caption terms (all must match; "phrases", -term excludes)'),
+    exclude: str | None = Option(None, "--exclude", help="Caption terms none of which may appear"),
     collection: str | None = Option(None, "--collection", help="Comma-separated institutions / Flickr owners"),
     min_short_side: int | None = Option(None, "--min-short-side", help="Minimum short side in px"),
     limit: int = Option(20, "--limit", help="Rows to print"),
@@ -351,7 +352,7 @@ def archives_search(
     from argus_quarry.archives import ArchiveQuery, get_archive
     from argus_quarry.config import QuarryConfig
 
-    query = ArchiveQuery(q=q, collections=_split_csv(collection) or [], min_short_side=min_short_side)
+    query = ArchiveQuery(q=q, exclude=exclude, collections=_split_csv(collection) or [], min_short_side=min_short_side)
     page = get_archive(name, QuarryConfig.from_env()).search(query, limit=limit)
     for item in page["items"]:
         size = f"{item['width']}x{item['height']}" if item["width"] else "?x?"

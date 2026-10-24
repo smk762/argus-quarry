@@ -20,7 +20,7 @@ Routes:
 
     GET  /archives                        -> configured archives + fetch_allowed
     GET  /archives/{name}/facets          -> collections / licences / mimes with counts
-    GET  /archives/{name}/search?q=&collection=&licence=&mime=&min_width=&min_height=
+    GET  /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=
                                  &min_short_side=&orientation=&sized_only=&ids=&sort=&limit=&offset=
     GET  /archives/{name}/items/{id}
     GET  /archives/{name}/thumb?id=&size= -> image/webp (PD12M) or a redirect to Flickr's own small size
@@ -352,7 +352,8 @@ _FETCH_REFUSAL = (
 
 
 def _archive_query(
-    q: str | None = Query(None, description="caption words, all must match"),
+    q: str | None = Query(None, description='caption terms, all must match; "phrases" and -excluded terms'),
+    exclude: str | None = Query(None, description="caption terms none of which may appear"),
     collection: str | None = Query(None, description="comma-separated institutions / Flickr owners"),
     licence: str | None = Query(None, description="comma-separated licence labels, e.g. CC0,PDM"),
     mime: str | None = Query(None, description="comma-separated MIME types"),
@@ -366,6 +367,7 @@ def _archive_query(
 ):
     return ArchiveQuery(
         q=q,
+        exclude=exclude,
         collections=_split_csv(collection) or [],
         licences=_split_csv(licence) or [],
         mimes=_split_csv(mime) or [],

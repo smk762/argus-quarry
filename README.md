@@ -273,6 +273,8 @@ argus-quarry archives search pd12m --q "harbour boats" --min-short-side 1024
 argus-quarry archives fetch slice.json            # --dry-run lists the URLs first
 ```
 
+Caption terms (`q`, `exclude`, `--q`, `--exclude`) are case-insensitive substrings. Every term in `q` must appear and none in `exclude` may; `"quoted phrases"` stay whole, and a leading `-` in `q` excludes a term (`harbor boats -painting`). An uncaptioned item doesn't mention anything, so an exclusion keeps it.
+
 A slice is a query plus where it lands:
 
 ```json
@@ -286,7 +288,7 @@ The server exposes the same thing over HTTP. Every route is `GET` except the fet
 |---|---|
 | `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`) and `fetch_allowed` |
 | `GET /archives/{name}/facets` | collections, licences and MIME types with counts |
-| `GET /archives/{name}/search?q=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest` |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest` |
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |

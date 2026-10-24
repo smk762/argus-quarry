@@ -25,6 +25,7 @@ licence-gate, SHA256 dedup and provenance stay in :mod:`argus_quarry.ingest`.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -54,7 +55,12 @@ class ArchiveUnavailable(RuntimeError):
 class ArchiveQuery(BaseModel):
     """Filters shared by every archive; fields an archive lacks simply match nothing extra."""
 
-    q: str | None = Field(None, description="caption words, all must match (case-insensitive)")
+    q: str | None = Field(
+        None,
+        description='caption terms, all must match (case-insensitive); "quoted phrases" stay whole and '
+        "a leading - excludes a term",
+    )
+    exclude: str | None = Field(None, description="caption terms none of which may appear (same syntax as q)")
     collections: list[str] = Field(default_factory=list, description="PD12M institutions / Flickr owners")
     licences: list[str] = Field(default_factory=list, description="raw licence labels, e.g. CC0, PDM")
     mimes: list[str] = Field(default_factory=list, description="e.g. image/jpeg")
@@ -65,6 +71,29 @@ class ArchiveQuery(BaseModel):
     sized_only: bool = Field(False, description="only items whose dimensions are known")
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
     sort: Literal["shuffle", "largest"] = "shuffle"
+
+
+def caption_terms(text: str | None) -> tuple[list[str], list[str]]:
+    """Split a caption query into ``(required, excluded)`` terms.
+
+    Whitespace separates terms, ``"double quotes"`` keep a phrase whole, and a
+    leading ``-`` (``-painting``, ``-"black and white"``) marks a term excluded.
+    Unbalanced quotes fall back to plain whitespace splitting rather than failing.
+    """
+    if not text or not text.strip():
+        return [], []
+    try:
+        tokens = shlex.split(text)
+    except ValueError:
+        tokens = text.split()
+    required: list[str] = []
+    excluded: list[str] = []
+    for token in tokens:
+        if token.startswith("-") and len(token) > 1:
+            excluded.append(token[1:])
+        elif token and token != "-":
+            required.append(token)
+    return required, excluded
 
 
 class SliceSpec(BaseModel):
@@ -196,9 +225,18 @@ class Archive(ABC):
     def _where(query: ArchiveQuery) -> tuple[str, list[Any]]:
         clauses: list[str] = []
         params: list[Any] = []
-        for word in (query.q or "").split():
-            clauses.append("caption ILIKE ?")
-            params.append(f"%{word}%")
+        required, excluded = caption_terms(query.q)
+        also_required, also_excluded = caption_terms(query.exclude)
+        # Every term of `exclude` is a negative, with or without a leading "-".
+        excluded += also_required + also_excluded
+        for term in required:
+            clauses.append("caption ILIKE ? ESCAPE '\\'")
+            params.append(f"%{_escape_like(term)}%")
+        for term in excluded:
+            # An uncaptioned item does not mention the term, so it is kept: excluding
+            # narrows what captions say, it does not also drop the unknown.
+            clauses.append("(caption IS NULL OR caption NOT ILIKE ? ESCAPE '\\')")
+            params.append(f"%{_escape_like(term)}%")
 
         def _in(column: str, values: list[str]) -> None:
             if values:
@@ -295,6 +333,14 @@ class Archive(ABC):
     @abstractmethod
     def to_record(self, item: dict[str, Any], *, category: str, subject: str) -> SourceRecord:
         """Map one index row to a :class:`SourceRecord` with full provenance."""
+
+
+def _escape_like(term: str) -> str:
+    """Make ``%`` and ``_`` in a user term literal for ``ILIKE … ESCAPE '\\'``.
+
+    DuckDB has no default LIKE escape character, so the clause must name one.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def sql_path(path: Path) -> str:
