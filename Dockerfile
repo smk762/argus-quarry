@@ -17,7 +17,7 @@ COPY . /app
 
 # Extras to install. "server" is in the default set so the published image can
 # run the read-only provenance API behind argus-studio's /gallery page.
-ARG EXTRAS=cli,phash,server
+ARG EXTRAS=cli,phash,server,archives
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
