@@ -160,11 +160,15 @@ Copy `.env.example` to `.env`. Key knobs:
 | `QUARRY_MAX_GB` | `40` | Total raw-pool ceiling; `0` = unlimited |
 | `COMMONS_USER_AGENT` | descriptive default | Polite UA (Commons/LoC expect one) |
 | `DATASET_DIR` | `./data` | Published view `export` writes into |
+| `QUARRY_PD12M_DIR` / `QUARRY_MEGALITH_DIR` | _(unset)_ | Archived metadata for the [archives](#public-domain-archives) (`<root>/pd12m`, `<root>/megalith`) |
+| `QUARRY_ALLOW_FETCH` | _(unset = off)_ | Let `POST /archives/{name}/fetch` land a slice from the server |
 
 ## HTTP server
 
-A tiny **read-only** provenance API (FastAPI) over the raw pool — no mutation
-endpoints, ever. It powers the
+A tiny provenance API (FastAPI) over the raw pool. It is read-only apart from
+one opt-in route, the archive slice fetch, which is refused unless
+`QUARRY_ALLOW_FETCH=1` (see [Public-domain archives](#public-domain-archives)).
+It powers the
 [argus-studio](https://github.com/smk762/argus-studio) `/gallery` view, the same
 way `/curate` talks to argus-curator on `:8101`.
 
@@ -241,6 +245,65 @@ never leaks a filesystem path. Point an orchestrator's *readiness* probe at
 | `GET /photos/{id}` | One photograph with full provenance (404 if unknown) |
 | `GET /thumb?id=&size=384` | WEBP thumbnail rendered from the pooled file (`size` = longest edge, capped at 1024) |
 
+## Public-domain archives
+
+Two large public-domain datasets can be searched and sliced without downloading
+their images. Quarry keeps their **metadata** locally (links, captions, sizes,
+licences) and lands only the slices you choose, through the same ingest
+pipeline as every other source (licence gate, SHA256 dedup, provenance).
+
+| Archive | Items | Filter on | Images come from |
+|---|---|---|---|
+| [PD12M](https://huggingface.co/datasets/Spawning/PD12M) | 12.4M | caption, institution (640), licence (CC0 / PDM), size, MIME type | the public `s3://pd12m` bucket |
+| [Megalith-10m](https://huggingface.co/datasets/madebyollin/megalith-10m) | 9.58M | Florence-2 caption (8.94M), Flickr account, size (~9.4M) | Flickr (1024px) |
+
+Megalith's links are a shuffled sample, so the Flickr account is its only built-in
+grouping. It also has no per-photo licence column, so each record states the
+dataset's licence filter as its licence label.
+
+```bash
+# 1. archive the metadata (~45 GB incl. PD12M's CLIP embeddings; resumable; no photos)
+HF_TOKEN=hf_... uv run scripts/fetch_public_domain_metadata.py --root /media/photos/public_domain
+# 2. point quarry at it and build the search index (DuckDB, under $QUARRY_HOME/cache/archives/)
+export QUARRY_PD12M_DIR=/media/photos/public_domain/pd12m QUARRY_MEGALITH_DIR=/media/photos/public_domain/megalith
+pip install "argus-quarry[cli,archives]"
+argus-quarry archives index
+argus-quarry archives search pd12m --q "harbour boats" --min-short-side 1024
+# 3. land a slice saved from argus-studio's /gallery -> Sources (or written by hand)
+argus-quarry archives fetch slice.json            # --dry-run lists the URLs first
+```
+
+**Tone, medium and year** are read from each caption when the index is built, because neither dataset records them per image. They're cues, not ground truth: an item whose caption doesn't say is left out when you filter on them.
+
+| Filter | Derived from | PD12M | Megalith |
+|---|---|---|---|
+| `tone` = `bw` / `color` | "black and white", "monochrome", "sepia" … versus colour words | 3.56M bw, 4.31M colour | 0.66M bw, 7.02M colour |
+| `medium` = `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` | the caption's opening words ("The image shows a black and white photo of …") | ~5.1M labelled | photo unless the caption says otherwise (Megalith filtered out non-photos) |
+| `year_min` / `year_max` | the first year or decade a caption mentions | 61k | 128k |
+
+Neither archive carries capture dates (Megalith's archived EXIF has none), so the year filter only finds images whose caption states a year. Rebuild old indexes after upgrading: an index from an older quarry reports `stale` and asks for `archives index`.
+
+Caption terms (`q`, `exclude`, `--q`, `--exclude`) are case-insensitive substrings. Every term in `q` must appear and none in `exclude` may; `"quoted phrases"` stay whole, and a leading `-` in `q` excludes a term (`harbor boats -painting`). An uncaptioned item doesn't mention anything, so an exclusion keeps it.
+
+A slice is a query plus where it lands:
+
+```json
+{"archive": "pd12m", "category": "setting", "subject": "Harbour_views", "limit": 200,
+ "query": {"q": "harbour boats", "collections": ["Rijksmuseum"], "min_short_side": 1024, "sort": "largest"}}
+```
+
+The server exposes the same thing over HTTP. Every route is `GET` except the fetch:
+
+| Route | Returns |
+|---|---|
+| `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`) and `fetch_allowed` |
+| `GET /archives/{name}/facets` | collections, licences and MIME types with counts |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise) |
+| `GET /archives/{name}/items/{id}` | one item |
+| `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
+| `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |
+| `POST /archives/{name}/fetch` (slice JSON body) | NDJSON `start` / `item` / `done` or `error` frames; **403 unless `QUARRY_ALLOW_FETCH=1`**, with the slice and CLI command in the body; 409 while another fetch runs |
+
 ## Suite integration
 
 Quarry ships a `gallery` profile in the suite's
@@ -264,6 +327,7 @@ docker compose --profile curator up --build    # then curate the published image
 | Wikimedia Commons | **Phase 1 (implemented)** |
 | Library of Congress, Smithsonian, Rijksmuseum, LAC (Karsh allow-list) | Phase 2 |
 | Europeana, Flickr Commons (strict per-record rights) | Phase 3 |
+| PD12M, Megalith-10m | **Archives (implemented)**: searched locally, landed by slice |
 
 New sources register in `downloaders/` behind a common `Downloader` contract, so
 adding one never touches ingest, storage, or export.

@@ -100,6 +100,7 @@ def test_health(config, client):
         "service": "argus-quarry",
         "version": body["version"],
         "quarry_home": str(config.home.resolve()),
+        "fetch_allowed": False,
     }
     assert isinstance(body["version"], str) and body["version"]
 
@@ -229,12 +230,17 @@ def test_thumb_404(client, seeded):
     assert client.get("/thumb", params={"id": seeded["pending"]}).status_code == 404  # never landed
 
 
+# The one deliberate write route: an archive slice fetch, gated by QUARRY_ALLOW_FETCH.
+OPT_IN_WRITE_ROUTES = {"/archives/{name}/fetch": {"POST"}}
+
+
 def test_no_mutation_endpoints(client):
     routes = {getattr(r, "path", None): getattr(r, "methods", set()) for r in client.app.routes}
     for path, methods in routes.items():
         if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"} or methods is None:
             continue
-        assert methods <= {"GET", "HEAD"}, f"{path} exposes {methods}"
+        allowed = {"GET", "HEAD"} | OPT_IN_WRITE_ROUTES.get(path, set())
+        assert methods <= allowed, f"{path} exposes {methods}"
 
 
 def _pool_fingerprint(home) -> dict[str, tuple]:

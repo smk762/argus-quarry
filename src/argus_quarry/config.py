@@ -49,6 +49,16 @@ class QuarryConfig(BaseModel):
     backoff_base: float = 0.5
     rates: dict[str, SourceRate] = Field(default_factory=dict)
 
+    # Local metadata archives of large public-domain datasets (links, captions,
+    # sizes; no photos) that the archive browser searches and slices from. See
+    # :mod:`argus_quarry.archives` and scripts/fetch_public_domain_metadata.py.
+    archive_dirs: dict[str, Path] = Field(default_factory=dict)
+
+    # Opt-in: let the server's POST /archives/{name}/fetch land a slice in the
+    # pool. Off by default, the demo-safe posture forge/proof/atlas share; when
+    # off the server only hands back the slice JSON + CLI command.
+    allow_fetch: bool = False
+
     def rate_for(self, source: str) -> SourceRate:
         return self.rates.get(source, SourceRate())
 
@@ -72,6 +82,11 @@ class QuarryConfig(BaseModel):
     @property
     def logs_dir(self) -> Path:
         return self.home / "logs"
+
+    @property
+    def archive_index_dir(self) -> Path:
+        """Where ``archives index`` writes the per-archive DuckDB search indexes."""
+        return self.cache_dir / "archives"
 
     def ensure_dirs(self) -> None:
         for d in (self.images_dir, self.metadata_dir, self.cache_dir, self.logs_dir):
@@ -99,6 +114,17 @@ class QuarryConfig(BaseModel):
         mp = os.environ.get("QUARRY_MAX_MEGAPIXELS")
         if mp:
             data["max_megapixels"] = float(mp)
+
+        archives = {}
+        for name in ("pd12m", "megalith"):
+            path = os.environ.get(f"QUARRY_{name.upper()}_DIR")
+            if path and path.strip():
+                archives[name] = Path(path.strip())
+        if archives:
+            data["archive_dirs"] = archives
+
+        if os.environ.get("QUARRY_ALLOW_FETCH", "").strip().lower() in {"1", "true", "yes", "on"}:
+            data["allow_fetch"] = True
 
         data.update(overrides)
         return cls(**data)

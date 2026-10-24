@@ -43,15 +43,19 @@ cli = ["typer>=0.12", "rich>=13.0"]
 phash = ["ImageHash>=4.3"]
 # Read-only provenance API — `argus-quarry serve` (see DESIGN.md section 9).
 server = ["fastapi>=0.110", "uvicorn>=0.27"]
+# Search + slice large public-domain metadata archives (PD12M, Megalith-10m) —
+# `argus-quarry archives …` and the server's /archives routes.
+archives = ["duckdb>=1.1"]
 all = [
     "typer>=0.12",
     "rich>=13.0",
     "ImageHash>=4.3",
     "fastapi>=0.110",
     "uvicorn>=0.27",
+    "duckdb>=1.1",
 ]
 # fastapi is here so the server tests run (they importorskip it otherwise).
-dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "httpx2>=2.7"]
+dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "httpx2>=2.7", "duckdb>=1.1"]
 
 [project.scripts]
 argus-quarry = "argus_quarry.cli:app"

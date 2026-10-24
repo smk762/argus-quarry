@@ -1,4 +1,4 @@
-"""argus-quarry CLI (Typer): run / fetch / export / list / stats / verify / subjects / serve.
+"""argus-quarry CLI (Typer): run / fetch / export / list / stats / verify / subjects / serve / archives.
 
 Everything is idempotent — reruns resume partials and skip completed work. The
 ``run`` command is the compose entrypoint: fetch into the raw pool, then publish
@@ -8,6 +8,7 @@ a filtered, category-sorted tree into ``DATASET_DIR``.
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from itertools import chain
 from pathlib import Path
 
@@ -17,6 +18,8 @@ try:
 except ImportError as _exc:  # pragma: no cover
     print("CLI requires: pip install argus-quarry[cli]", file=sys.stderr)
     raise SystemExit(1) from _exc
+
+from argus_quarry.archives.base import DEFAULT_BUILD_MEMORY  # duckdb itself stays a lazy import
 
 app = typer.Typer(
     name="argus-quarry",
@@ -268,10 +271,11 @@ def serve(
     host: str = Option("0.0.0.0", "--host", help="Host to bind to"),
     cors: bool = Option(False, "--cors", help="Enable CORS (allow all origins)"),
 ) -> None:
-    """Start the read-only provenance API (FastAPI) on :8102.
+    """Start the provenance API (FastAPI) on :8102.
 
     The pool root comes from $QUARRY_HOME (default ./quarry), same as every
-    other command. Strictly read-only — see DESIGN.md section 9.
+    other command. Read-only except the opt-in archive slice fetch
+    (QUARRY_ALLOW_FETCH=1) — see DESIGN.md section 9.
     """
     try:
         import uvicorn
@@ -283,6 +287,135 @@ def serve(
 
     application = create_app(cors=cors)
     uvicorn.run(application, host=host, port=port)
+
+
+# ── archives: search + slice large public-domain metadata archives ───
+@contextmanager
+def _archive_errors():
+    """Turn the expected archive failures (unknown name, no index, bad slice file) into a
+    one-line message and exit code 2 instead of a traceback."""
+    from pydantic import ValidationError
+
+    from argus_quarry.archives import ArchiveUnavailable
+
+    try:
+        yield
+    except (ArchiveUnavailable, ValidationError, OSError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except KeyError as exc:  # get_archive: unknown archive name
+        typer.echo(f"error: {exc.args[0] if exc.args else exc}", err=True)
+        raise typer.Exit(2) from exc
+
+
+archives_app = typer.Typer(
+    help="Search and slice local metadata archives (PD12M, Megalith-10m) into the raw pool.",
+    no_args_is_help=True,
+)
+app.add_typer(archives_app, name="archives")
+
+
+@archives_app.command("status")
+def archives_status() -> None:
+    """Show which archives are configured (QUARRY_<NAME>_DIR) and indexed."""
+    from argus_quarry.archives import available_archives, get_archive
+    from argus_quarry.config import QuarryConfig
+
+    config = QuarryConfig.from_env()
+    for name in available_archives():
+        info = get_archive(name, config).status()
+        where = config.archive_dirs.get(name) or f"unset (QUARRY_{name.upper()}_DIR)"
+        items = f"{info['items']:,} items" if info["items"] is not None else "not indexed"
+        typer.echo(f"  {name:<9} {items:<18} {where}")
+
+
+@archives_app.command("index")
+def archives_index(
+    names: list[str] = typer.Argument(None, help="Archives to index (default: every configured one)"),
+    threads: int | None = Option(None, "--threads", help="DuckDB threads (default: all cores)"),
+    memory_limit: str = Option(
+        DEFAULT_BUILD_MEMORY, "--memory-limit", help="DuckDB memory ceiling for the build; past it, joins spill to disk"
+    ),
+) -> None:
+    """Build (or rebuild) the search index for each archive under $QUARRY_HOME/cache/archives/."""
+    import time
+
+    from argus_quarry.archives import get_archive
+    from argus_quarry.config import QuarryConfig
+
+    config = QuarryConfig.from_env()
+    targets = names or sorted(config.archive_dirs)
+    if not targets:
+        typer.echo("No archives configured: set QUARRY_PD12M_DIR and/or QUARRY_MEGALITH_DIR.", err=True)
+        raise typer.Exit(2)
+    for name in targets:
+        with _archive_errors():
+            archive = get_archive(name, config)
+            started = time.monotonic()
+            typer.echo(f"Indexing {name} from {archive.root} …")
+            n = archive.build_index(threads=threads, memory_limit=memory_limit)
+        typer.echo(f"  {n:,} items -> {archive.index_path} ({time.monotonic() - started:.0f}s)")
+
+
+@archives_app.command("search")
+def archives_search(
+    name: str = typer.Argument(..., help="pd12m or megalith"),
+    q: str | None = Option(None, "--q", help='Caption terms (all must match; "phrases", -term excludes)'),
+    exclude: str | None = Option(None, "--exclude", help="Caption terms none of which may appear"),
+    collection: list[str] | None = Option(
+        None,
+        "--collection",
+        help="Institution / Flickr owner (repeatable, or comma-joined with no space after the comma)",
+    ),
+    min_short_side: int | None = Option(None, "--min-short-side", help="Minimum short side in px"),
+    limit: int = Option(20, "--limit", help="Rows to print"),
+) -> None:
+    """Print a page of matches — a quick terminal check before saving a slice."""
+    from argus_quarry.archives import ArchiveQuery, get_archive, split_collections
+    from argus_quarry.config import QuarryConfig
+
+    with _archive_errors():
+        query = ArchiveQuery(
+            q=q, exclude=exclude, collections=split_collections(collection), min_short_side=min_short_side
+        )
+        page = get_archive(name, QuarryConfig.from_env()).search(query, limit=limit)
+    for item in page["items"]:
+        size = f"{item['width']}x{item['height']}" if item["width"] else "?x?"
+        typer.echo(
+            f"  {item['id']:<36} {size:<11} {(item['collection'] or '')[:24]:<24} {(item['caption'] or '')[:70]}"
+        )
+    typer.echo(f"\n{page['total']:,} match(es).")
+
+
+@archives_app.command("fetch")
+def archives_fetch(
+    spec: Path = typer.Argument(..., help="slice.json saved from the studio's Sources view (or written by hand)"),
+    dry_run: bool = Option(False, "--dry-run", help="List what would be fetched without downloading"),
+) -> None:
+    """Land a saved slice in the raw pool through the normal ingest pipeline."""
+    from argus_quarry.archives import SliceSpec, get_archive
+    from argus_quarry.config import QuarryConfig
+    from argus_quarry.ingest import IngestEngine, fetch
+    from argus_quarry.net import NetClient
+    from argus_quarry.store import ProvenanceStore
+
+    with _archive_errors():
+        slice_spec = SliceSpec.model_validate_json(spec.read_text())
+        config = QuarryConfig.from_env()
+        archive = get_archive(slice_spec.archive, config)
+        matches = archive.count(slice_spec.query)
+    n = min(matches, slice_spec.limit)
+    typer.echo(
+        f"Slice: {slice_spec.archive} -> {slice_spec.category}/{slice_spec.subject}, {n} of {matches:,} match(es)"
+    )
+    if dry_run:
+        with _archive_errors():
+            for record in archive.records(slice_spec):
+                typer.echo(f"  {record.remote_url}")
+        return
+    with _archive_errors(), ProvenanceStore(config.db_path) as store, NetClient(config) as net:
+        summary = fetch(IngestEngine(config, store, net), archive.records(slice_spec))
+    _print_fetch_summary(summary)
 
 
 # Backward-compatible alias for the pre-0.2 `people` command (identity only).

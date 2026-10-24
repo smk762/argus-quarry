@@ -25,6 +25,8 @@ from argus_quarry.store import ProvenanceStore
 logger = structlog.get_logger()
 
 _ALLOWED_EXTS = {".jpg", ".jpeg", ".png"}
+#: Formats that land as-is; anything else Pillow decodes (TIFF, GIF, WebP, …) is re-encoded to PNG.
+_LANDED_FORMATS = {"JPEG": ".jpg", "PNG": ".png"}
 
 
 class BudgetReached(Exception):
@@ -144,9 +146,13 @@ class IngestEngine:
             logger.info("budget_reached", pool_bytes=self._pool_bytes, next_size=file_size)
             raise BudgetReached(f"landing {file_size} bytes would exceed cap {self.config.max_total_bytes}")
 
-        # 5. Land in the raw pool + record (sorted into <category>/<subject>/).
+        # 5. Land in the raw pool + record (sorted into <category>/<subject>/). A reused
+        # row keeps its own category/subject, so the file lands where the DB says it is.
+        folder = self.config.images_dir / (existing or record).category / (existing or record).subject
         filename = self._pool_filename(record, sha256, landed.suffix)
-        dest = self.config.images_dir / record.category / record.subject / filename
+        if (folder / filename).exists():  # different bytes (sha256 is unique) sharing a short-hash name
+            filename = self._pool_filename(record, sha256, landed.suffix, full_hash=True)
+        dest = folder / filename
         dest.parent.mkdir(parents=True, exist_ok=True)
         landed.replace(dest)
 
@@ -203,7 +209,11 @@ class IngestEngine:
         self.store.set_status(pid, "quarantined")
 
     def _verify_and_cap(self, src: Path, ext: str) -> tuple[Path, int, int, str | None]:
-        """Decode, enforce the megapixel cap, and return (landed_path, w, h, phash)."""
+        """Decode, enforce the megapixel cap, and return (landed_path, w, h, phash).
+
+        The landed suffix follows the decoded format, not the URL: JPEG/PNG keep their
+        bytes, other formats are re-encoded to PNG so a TIFF never lands named ``.jpg``.
+        """
         with Image.open(src) as im:
             im.load()
             width, height = im.size
@@ -219,12 +229,23 @@ class IngestEngine:
                 src.unlink(missing_ok=True)
                 return out, new_size[0], new_size[1], phash
 
+            suffix = _LANDED_FORMATS.get(im.format or "")
+            if suffix is None:
+                out = src.with_suffix(".converted.png")
+                im.seek(0)  # first frame of an animated GIF/WebP
+                frame = im if im.mode in {"1", "L", "LA", "I", "I;16", "P", "RGB", "RGBA"} else im.convert("RGB")
+                frame.save(out, "PNG", optimize=True)
+                src.unlink(missing_ok=True)
+                return out, width, height, phash
+
+        if src.suffix != suffix and not (suffix == ".jpg" and src.suffix == ".jpeg"):
+            src = src.replace(src.with_suffix(suffix))
         return src, width, height, phash
 
-    def _pool_filename(self, record: SourceRecord, sha256: str, ext: str) -> str:
+    def _pool_filename(self, record: SourceRecord, sha256: str, ext: str, *, full_hash: bool = False) -> str:
         year = str(record.year) if record.year else "ny"
         base = record.subject.lower()
-        return f"{base}_{year}_{record.source}_{sha256[:8]}{ext}"
+        return f"{base}_{year}_{record.source}_{sha256 if full_hash else sha256[:8]}{ext}"
 
 
 @dataclass

@@ -328,6 +328,14 @@ Next.js frontend, so:
   a `/thumb` WEBP renderer over the pooled files. The demo frontend surfaces it
   as the `/gallery` route — consistent with how `/curate` already talks to
   curator. Strictly read-only: no mutation endpoints.
+- **Public-domain archives (2026-10):** `/archives/*` search the local metadata
+  of PD12M and Megalith-10m (a DuckDB index under `cache/archives/`) and plan
+  *slices*. This adds the server's **one** write route, deliberately:
+  `POST /archives/{name}/fetch` lands a slice through `IngestEngine` (the same
+  licence-gate → dedup → land path as `fetch`). It is off unless
+  `QUARRY_ALLOW_FETCH=1`; when off, the UI downloads the slice JSON and the
+  operator runs `argus-quarry archives fetch slice.json`. The provenance routes
+  below remain strictly read-only.
 
 Strictly read-only means the *store*, not just the routes. The server opens the
 pool via `ProvenanceStore.open_readable()`, which never mkdirs, never migrates
