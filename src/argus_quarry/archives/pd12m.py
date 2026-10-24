@@ -1,6 +1,6 @@
 """PD12M (Spawning) — 12.4M CC0 / Public Domain Mark images from 640 institutions.
 
-Archived layout (``QUARRY_PD12M_DIR``): ``metadata/*.parquet`` with ``id, url,
+Archived layout (``QUARRY_PD12M_DIR``): ``metadata/**/*.parquet`` with ``id, url,
 caption, width, height, mime_type, hash, license, source``. Images live in the
 public ``s3://pd12m`` bucket the ``url`` column points at. PD12M records no
 per-image source page, so provenance is the S3 object plus the contributing
@@ -28,7 +28,8 @@ class PD12MArchive(Archive):
     )
 
     def _select_sql(self, root: Path) -> str:
-        files = sql_path(root / "metadata" / "*.parquet")
+        # Recursive: a Hugging Face mirror of the repo nests it as metadata/metadata/*.parquet.
+        files = sql_path(root / "metadata" / "**" / "*.parquet")
         return f"""
             SELECT
                 id,

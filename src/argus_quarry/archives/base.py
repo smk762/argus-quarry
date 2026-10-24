@@ -25,18 +25,25 @@ licence-gate, SHA256 dedup and provenance stay in :mod:`argus_quarry.ingest`.
 from __future__ import annotations
 
 import os
+import shutil
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
+import structlog
 from pydantic import BaseModel, Field, field_validator
 
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import DEFAULT_CATEGORY, SourceRecord, normalise_category, slugify_name
 
+logger = structlog.get_logger()
+
 PAGE_MAX = 200
 SLICE_MAX = 5000
+#: DuckDB memory ceiling for an index build; joins and sorts spill to disk past it.
+#: Megalith's build peaked over 14 GB unbounded, which got it OOM-killed beside other tenants.
+DEFAULT_BUILD_MEMORY = "4GB"
 ITEM_FIELDS = ("id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime")
 
 
@@ -133,7 +140,12 @@ class Archive(ABC):
     def _select_sql(self, root: Path) -> str:
         """A SELECT producing the common columns (minus ``rnd``) from the raw archive files."""
 
-    def build_index(self, *, threads: int | None = None) -> int:
+    def _stage_sql(self, root: Path) -> list[str]:
+        """Statements run before :meth:`_select_sql`, typically ``CREATE TEMP TABLE`` staging
+        that the final SELECT joins. Temp tables spill to disk under the memory limit."""
+        return []
+
+    def build_index(self, *, threads: int | None = None, memory_limit: str = DEFAULT_BUILD_MEMORY) -> int:
         """(Re)build the DuckDB index atomically: write a temp file, then rename over the old one."""
         root = self.root
         if root is None or not root.is_dir():
@@ -142,10 +154,17 @@ class Archive(ABC):
         self.config.archive_index_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.index_path.with_suffix(".duckdb.tmp")
         tmp.unlink(missing_ok=True)
+        spill = self.config.archive_index_dir / f".{self.name}.spill"
         con = duckdb.connect(str(tmp))
+        built = False
         try:
             if threads:
                 con.execute(f"SET threads = {int(threads)}")
+            con.execute("SET memory_limit = ?", [memory_limit])
+            con.execute("SET temp_directory = ?", [str(spill)])
+            con.execute("SET preserve_insertion_order = false")  # lets big CREATE TABLE AS stream
+            for statement in self._stage_sql(root):
+                con.execute(statement)
             con.execute(
                 "CREATE TABLE items AS SELECT *, hash(id || 'argus') AS rnd FROM (" + self._select_sql(root) + ")"
             )
@@ -153,9 +172,17 @@ class Archive(ABC):
                 "CREATE TABLE facets AS SELECT collection, count(*) AS n FROM items "
                 "WHERE collection IS NOT NULL GROUP BY collection ORDER BY n DESC"
             )
-            n = con.execute("SELECT count(*) FROM items").fetchone()[0]
+            n, distinct = con.execute("SELECT count(*), count(DISTINCT id) FROM items").fetchone()
+            if distinct != n:
+                logger.warning("archive_duplicate_ids", archive=self.name, rows=n, distinct=distinct)
+            built = True
+        except duckdb.Error as exc:
+            raise ArchiveUnavailable(f"{self.name}: index build failed: {exc}") from exc
         finally:
             con.close()
+            shutil.rmtree(spill, ignore_errors=True)
+            if not built:  # never leave a half-built index behind
+                tmp.unlink(missing_ok=True)
         os.replace(tmp, self.index_path)
         return n
 

@@ -35,46 +35,53 @@ class MegalithArchive(Archive):
         "with Florence-2 captions and 1024px sizes for the ~9.4M Drawthings archived."
     )
 
-    def _select_sql(self, root: Path) -> str:
-        links = sql_path(root / "links" / "data" / "*.parquet")
+    def _stage_sql(self, root: Path) -> list[str]:
         captions = root / "captions" / "metadata.csv"
         drawthings = root / "drawthings"
-        caption_join = (
-            f"""LEFT JOIN (
-                    SELECT url_source, any_value(trim(caption, ' ' || chr(9) || chr(10) || chr(13))) AS caption
-                    FROM read_csv({sql_path(captions)}, header = true,
-                                  columns = {{'url_source': 'VARCHAR', 'caption': 'VARCHAR'}})
-                    GROUP BY url_source
-                ) c USING (url_source)"""
-            if captions.is_file()
-            else "LEFT JOIN (SELECT NULL::VARCHAR AS url_source, NULL::VARCHAR AS caption) c USING (url_source)"
-        )
-        size_join = (
-            f"""LEFT JOIN (
-                    SELECT url AS url_highres, any_value(width) AS width, any_value(height) AS height
-                    FROM read_parquet({sql_path(drawthings / "*.parquet")})
-                    WHERE status = 'success'
-                    GROUP BY url
-                ) d USING (url_highres)"""
-            if any(drawthings.glob("*.parquet"))
-            else "LEFT JOIN (SELECT NULL::VARCHAR AS url_highres, NULL::INTEGER AS width, "
-            "NULL::INTEGER AS height) d USING (url_highres)"
-        )
+        stage = []
+        if captions.is_file():
+            # parallel = false: every caption is a quoted multi-line field, and DuckDB's
+            # parallel reader mis-splits rows when a chunk boundary lands inside one (it
+            # failed at line 143,592 of the real file, and dropped ~12k rows with
+            # ignore_errors). Serial reads all 9,148,514 rows. url_source is unique in the
+            # published file, so no GROUP BY here (it cost GBs over 9M long strings);
+            # build_index warns if a duplicate id ever comes through the join.
+            stage.append(f"""
+                CREATE TEMP TABLE caps AS
+                SELECT url_source, trim(caption, ' ' || chr(9) || chr(10) || chr(13)) AS caption
+                FROM read_csv({sql_path(captions)}, header = true, delim = ',', quote = '"', escape = '"',
+                              parallel = false, columns = {{'url_source': 'VARCHAR', 'caption': 'VARCHAR'}})
+            """)
+        else:
+            stage.append("CREATE TEMP TABLE caps (url_source VARCHAR, caption VARCHAR)")
+        if any(drawthings.glob("*.parquet")):
+            stage.append(f"""
+                CREATE TEMP TABLE sizes AS
+                SELECT url AS url_highres, CAST(width AS INTEGER) AS width, CAST(height AS INTEGER) AS height
+                FROM read_parquet({sql_path(drawthings / "*.parquet")})
+                WHERE status = 'success'
+            """)
+        else:
+            stage.append("CREATE TEMP TABLE sizes (url_highres VARCHAR, width INTEGER, height INTEGER)")
+        return stage
+
+    def _select_sql(self, root: Path) -> str:
+        links = sql_path(root / "links" / "data" / "*.parquet")
         return f"""
             SELECT
-                regexp_extract(url_source, '/photos/[^/]+/([0-9]+)', 1) AS id,
-                url_highres AS url,
+                regexp_extract(l.url_source, '/photos/[^/]+/([0-9]+)', 1) AS id,
+                l.url_highres AS url,
                 l.url AS thumb_url,
-                url_source AS source_url,
+                l.url_source AS source_url,
                 c.caption AS caption,
-                CAST(d.width AS INTEGER) AS width,
-                CAST(d.height AS INTEGER) AS height,
+                d.width AS width,
+                d.height AS height,
                 'public domain or equivalent' AS licence,
-                regexp_extract(url_source, '/photos/([^/]+)/', 1) AS collection,
+                regexp_extract(l.url_source, '/photos/([^/]+)/', 1) AS collection,
                 'image/jpeg' AS mime
             FROM read_parquet({links}) l
-            {caption_join}
-            {size_join}
+            LEFT JOIN caps c ON c.url_source = l.url_source
+            LEFT JOIN sizes d ON d.url_highres = l.url_highres
         """
 
     def to_record(self, item: dict[str, Any], *, category: str, subject: str) -> SourceRecord:

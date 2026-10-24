@@ -331,3 +331,13 @@ def test_cli_index_status_and_dry_run(tmp_path, pd12m_dir, monkeypatch):
     spec.write_text(SliceSpec(archive="pd12m", subject="h", query=ArchiveQuery(q="harbour")).model_dump_json())
     out = runner.invoke(app, ["archives", "fetch", str(spec), "--dry-run"]).output
     assert "2 of 2 match(es)" in out and "s3.example/a1.jpeg" in out
+
+
+def test_failed_build_leaves_no_temp_file_and_keeps_old_index(archives_config, megalith_dir):
+    mg = get_archive("megalith", archives_config)
+    before = mg.index_path.stat().st_ino
+    (megalith_dir / "links" / "data" / "megalith-00001-of-00010.parquet").write_bytes(b"not parquet")
+    with pytest.raises(ArchiveUnavailable, match="index build failed"):
+        mg.build_index()
+    assert not mg.index_path.with_suffix(".duckdb.tmp").exists()
+    assert mg.index_path.stat().st_ino == before and mg.status()["items"] == 3

@@ -312,6 +312,9 @@ def archives_status() -> None:
 def archives_index(
     names: list[str] = typer.Argument(None, help="Archives to index (default: every configured one)"),
     threads: int | None = Option(None, "--threads", help="DuckDB threads (default: all cores)"),
+    memory_limit: str = Option(
+        "4GB", "--memory-limit", help="DuckDB memory ceiling for the build; past it, joins spill to disk"
+    ),
 ) -> None:
     """Build (or rebuild) the search index for each archive under $QUARRY_HOME/cache/archives/."""
     import time
@@ -329,7 +332,7 @@ def archives_index(
         started = time.monotonic()
         typer.echo(f"Indexing {name} from {archive.root} …")
         try:
-            n = archive.build_index(threads=threads)
+            n = archive.build_index(threads=threads, memory_limit=memory_limit)
         except ArchiveUnavailable as exc:
             typer.echo(f"  {exc}", err=True)
             raise typer.Exit(2) from exc
