@@ -46,6 +46,11 @@ server = ["fastapi>=0.110", "uvicorn>=0.27"]
 # Search + slice large public-domain metadata archives (PD12M, Megalith-10m) —
 # `argus-quarry archives …` and the server's /archives routes.
 archives = ["duckdb>=1.1"]
+# Semantic search over PD12M's CLIP ViT-L/14 embeddings: the vector index build
+# (`archives index pd12m --embeddings`) and "more like this" (`similar_to`). No torch.
+embeddings = ["duckdb>=1.1", "faiss-cpu>=1.8", "numpy>=1.26"]
+# `embeddings` plus the CLIP text tower, for text queries (`semantic=`). Pulls in torch.
+search = ["duckdb>=1.1", "faiss-cpu>=1.8", "numpy>=1.26", "transformers>=4.40", "torch>=2.2"]
 all = [
     "typer>=0.12",
     "rich>=13.0",
@@ -53,9 +58,11 @@ all = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "duckdb>=1.1",
+    "faiss-cpu>=1.8",
+    "numpy>=1.26",
 ]
 # fastapi is here so the server tests run (they importorskip it otherwise).
-dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "httpx2>=2.7", "duckdb>=1.1"]
+dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "httpx2>=2.7", "duckdb>=1.1", "faiss-cpu>=1.8", "numpy>=1.26"]
 
 [project.scripts]
 argus-quarry = "argus_quarry.cli:app"

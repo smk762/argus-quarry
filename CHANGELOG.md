@@ -6,6 +6,12 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Added
 
+- Semantic search over PD12M's CLIP ViT-L/14 embeddings ([#15](https://github.com/smk762/argus-quarry/issues/15)). `GET /archives/pd12m/search` (and `archives search`) takes `semantic=<text>` to rank by meaning or `similar_to=<id>` for "more like this" (and near-duplicates), combined with the existing filters. Each item gets a `score`, and slices keep the ranking. `archives index pd12m --embeddings` (or `--embeddings-only`) builds the vector index: memory-bounded, 1.3 GB of FAISS IVF-PQ plus a 19 GB float16 copy under `$QUARRY_HOME/cache/archives/`. New extras: `[embeddings]` (faiss, numpy) for the build and `similar_to`, `[search]` (adds transformers and torch) for text queries. `GET /archives` reports each archive's `semantic` status. The published image adds `[embeddings]`. Text queries in a container need `--build-arg EXTRAS=cli,phash,server,archives,search`.
+
+### Changed
+
+- The archive index schema is now 4, which adds `pos`, an item's row in the published embeddings. Existing indexes report `stale` until `archives index` rebuilds them (about 30 s for PD12M).
+
 - A `v*` tag now also creates the GitHub Release, after the PyPI publish succeeds. Its notes are that version's section of this file (a missing section fails the job), it carries the built wheel and sdist, a re-run updates it in place, and `-` / `rc` / `a<n>` / `b<n>` tags are marked pre-release ([#21](https://github.com/smk762/argus-quarry/issues/21)).
 
 ## [0.3.1] - 2026-10-24

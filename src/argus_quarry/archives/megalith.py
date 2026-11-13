@@ -84,7 +84,8 @@ class MegalithArchive(Archive):
                 d.height AS height,
                 'public domain or equivalent' AS licence,
                 regexp_extract(l.url_source, '/photos/([^/]+)/', 1) AS collection,
-                'image/jpeg' AS mime
+                'image/jpeg' AS mime,
+                CAST(NULL AS BIGINT) AS pos
             FROM read_parquet({links}) l
             LEFT JOIN caps c ON c.url_source = l.url_source
             LEFT JOIN sizes d ON d.url_highres = l.url_highres

@@ -15,11 +15,15 @@ and builds one DuckDB index under ``$QUARRY_HOME/cache/archives/`` with a common
     collection  the facet: PD12M institution, Flickr owner account
     mime        image MIME type, NULL when unknown
     rnd         a fixed random key, so "shuffle" pages are stable and diverse
+    pos         the item's row in the archive's published embeddings, NULL when it has none
 
 Searching is read-only. A *slice* (:class:`SliceSpec`) is a saved query plus the
 category/subject it lands under; :meth:`Archive.records` turns it into the same
 :class:`~argus_quarry.models.SourceRecord` stream every downloader yields, so
 licence-gate, SHA256 dedup and provenance stay in :mod:`argus_quarry.ingest`.
+
+An archive that publishes image embeddings (PD12M) can also be searched by meaning
+(``semantic``) or by example (``similar_to``); see :mod:`argus_quarry.archives.semantic`.
 """
 
 from __future__ import annotations
@@ -34,8 +38,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 import structlog
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from argus_quarry.archives import semantic as sem
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import DEFAULT_CATEGORY, SourceRecord, normalise_category, slugify_name
 
@@ -54,8 +59,10 @@ ITEM_FIELDS = (
 )  # fmt: skip
 
 #: Bumped whenever the ``items`` columns, or how they are derived, change; an older index asks to be
-#: rebuilt. 3: "The photo shows …" openers count as medium photo.
-INDEX_SCHEMA = 3
+#: rebuilt. 3: "The photo shows …" openers count as medium photo. 4: ``pos`` (embedding row).
+INDEX_SCHEMA = 4
+#: A semantic query ranks at most this many items (the nearest neighbours that pass the filters).
+SEMANTIC_MAX = 5000
 
 # ── caption-derived columns ─────────────────────────────────────────────
 # Neither dataset records tone, medium or date per image, so they are read off
@@ -117,6 +124,10 @@ class IndexStale(ArchiveUnavailable):
     """The index exists but was built for a different schema: it needs a rebuild."""
 
 
+class ItemNotFound(LookupError):
+    """A query named an item (``similar_to``) the archive does not have."""
+
+
 class ArchiveQuery(BaseModel):
     """Filters shared by every archive; fields an archive lacks simply match nothing extra."""
 
@@ -143,7 +154,29 @@ class ArchiveQuery(BaseModel):
     )
     year_max: int | None = Field(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year <=")
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
-    sort: Literal["shuffle", "largest"] = "shuffle"
+    sort: Literal["shuffle", "largest"] = Field("shuffle", description="ignored by semantic/similar_to queries")
+    semantic: str | None = Field(
+        None,
+        max_length=1000,
+        description="rank by meaning: CLIP text query, e.g. 'a woman in a wool coat, outdoors' "
+        "(archives with embeddings only)",
+    )
+    similar_to: str | None = Field(None, description="rank by likeness to this item id (more like this)")
+
+    @model_validator(mode="after")
+    def _one_ranking(self) -> ArchiveQuery:
+        if self.semantic is not None and not self.semantic.strip():
+            self.semantic = None
+        if self.similar_to is not None and not self.similar_to.strip():
+            self.similar_to = None
+        if self.semantic and self.similar_to:
+            raise ValueError("semantic and similar_to are exclusive: rank by text or by example, not both")
+        return self
+
+    @property
+    def ranked(self) -> bool:
+        """True when results are ordered by embedding similarity rather than ``sort``."""
+        return bool(self.semantic or self.similar_to)
 
     @field_validator("mediums")
     @classmethod
@@ -246,6 +279,9 @@ class Archive(ABC):
     source: str = "base"
     #: Medium assumed when the caption names none (Megalith is photos by construction).
     default_medium: str | None = None
+    #: The model that made the archive's published image embeddings (and so the text
+    #: encoder for ``semantic`` queries); None when the archive publishes none.
+    embedding_model: str | None = None
 
     def __init__(self, config: QuarryConfig) -> None:
         self.config = config
@@ -270,7 +306,16 @@ class Archive(ABC):
             "indexed": self.index_path.is_file(),
             "stale": False,
             "items": None,
+            "semantic": None,
         }
+        if self.embedding_model:
+            meta = sem.read_pointer(self.config.archive_index_dir, self.name)
+            info["semantic"] = {
+                "indexed": meta is not None,
+                "vectors": meta["rows"] if meta else None,
+                "model": self.embedding_model,
+                "built_at": meta.get("built_at") if meta else None,
+            }
         if info["indexed"]:
             try:
                 with self._connect() as con:
@@ -286,6 +331,10 @@ class Archive(ABC):
     @abstractmethod
     def _select_sql(self, root: Path) -> str:
         """A SELECT producing the common columns (minus ``rnd``) from the raw archive files."""
+
+    def _embedding_files(self, root: Path) -> list[Path]:
+        """The published embedding matrices, in row order (concatenated, row ``i`` is ``items.pos = i``)."""
+        return []
 
     def _stage_sql(self, root: Path) -> list[str]:
         """Statements run before :meth:`_select_sql`, typically ``CREATE TEMP TABLE`` staging
@@ -318,6 +367,11 @@ class Archive(ABC):
                 f"CREATE TABLE items AS SELECT *, hash(id || 'argus') AS rnd, {_derived_sql(self.default_medium)} "
                 f"FROM ({self._select_sql(root)})"
             )
+            if self.embedding_model:
+                # Ranked queries join their hits back by pos: without an index that is a scan
+                # of every row (~1.5 s on PD12M), with it ~5 ms. Archives with no embeddings
+                # have an all-NULL pos and never rank, so they skip it.
+                con.execute("CREATE INDEX items_pos ON items (pos)")
             con.execute("CREATE TABLE meta AS SELECT ? AS schema_version, now() AS built_at", [INDEX_SCHEMA])
             con.execute(
                 "CREATE TABLE facets AS SELECT collection, count(*) AS n FROM items "
@@ -337,6 +391,48 @@ class Archive(ABC):
                 tmp.with_name(tmp.name + ".wal").unlink(missing_ok=True)
         os.replace(tmp, self.index_path)
         return n
+
+    def build_embeddings(
+        self,
+        *,
+        threads: int | None = None,
+        factory: str | None = None,
+        chunk_rows: int = sem.DEFAULT_CHUNK_ROWS,
+        train_rows: int | None = None,
+        progress=None,  # noqa: ANN001
+    ) -> dict[str, Any]:
+        """(Re)build the vector index from the archive's published embeddings.
+
+        Needs a current metadata index: its ``pos`` column is what a hit maps back to,
+        so the embeddings must have exactly one row per item.
+        """
+        if not self.embedding_model:
+            raise ArchiveUnavailable(f"{self.name}: this archive publishes no embeddings")
+        root = self.root
+        if root is None or not root.is_dir():
+            raise ArchiveUnavailable(f"{self.name}: set QUARRY_{self.name.upper()}_DIR to the archived metadata")
+        files = self._embedding_files(root)
+        if not files:
+            raise ArchiveUnavailable(f"{self.name}: no embeddings under {root} (archive them with --embeddings)")
+        with self._connect() as con:
+            n, n_pos, max_pos = con.execute("SELECT count(*), count(pos), max(pos) FROM items").fetchone()
+        if n_pos != n or max_pos != n - 1:
+            raise ArchiveUnavailable(f"{self.name}: index rows do not map 1:1 onto embedding rows — rebuild the index")
+        try:
+            return sem.build_vector_index(
+                files,
+                self.config.archive_index_dir,
+                self.name,
+                expected_rows=n,
+                model=self.embedding_model,
+                factory=factory,
+                chunk_rows=chunk_rows,
+                train_rows=train_rows,
+                threads=threads,
+                progress=progress,
+            )
+        except sem.SemanticUnavailable as exc:
+            raise ArchiveUnavailable(str(exc)) from exc
 
     # ── read path ─────────────────────────────────────────────────────
     def _connect(self):
@@ -430,8 +526,92 @@ class Archive(ABC):
             return " ORDER BY width::BIGINT * height DESC NULLS LAST, rnd, id"
         return " ORDER BY rnd, id"
 
+    # ── semantic ranking ──────────────────────────────────────────────
+    def _vector_index(self) -> sem.VectorIndex:
+        if not self.embedding_model:
+            raise ArchiveUnavailable(f"{self.name}: no embeddings, so no semantic or similar_to search")
+        try:
+            index = sem.load_vector_index(self.config.archive_index_dir, self.name)
+        except sem.SemanticUnavailable as exc:
+            raise ArchiveUnavailable(str(exc)) from exc
+        except Exception as exc:  # a corrupt / foreign file: same as not built
+            raise ArchiveUnavailable(f"{self.name}: embeddings index is unreadable ({exc})") from exc
+        if index is None:
+            raise ArchiveUnavailable(
+                f"{self.name}: no embeddings index yet — run `argus-quarry archives index {self.name} --embeddings`"
+            )
+        return index
+
+    def _ranked(self, con, query: ArchiveQuery, k: int) -> tuple[list[sem.Hit], int]:  # noqa: ANN001
+        """The ``k`` best items for a ranked query, and how many items it ranks (capped at SEMANTIC_MAX).
+
+        ``k == 0`` only counts: no query vector is computed (no text encoding) and no
+        bitmap is built, so ``count`` stays cheap for the slice and fetch routes.
+        """
+        index = self._vector_index()
+        # The vector index maps hits by row; after a metadata rebuild over different files
+        # its rows no longer line up with items.pos (wrong items, or an out-of-range 500).
+        n_items = con.execute("SELECT count(*) FROM items").fetchone()[0]
+        if n_items != index.rows:
+            raise ArchiveUnavailable(
+                f"{self.name}: embeddings index has {index.rows:,} rows but the metadata index {n_items:,} — "
+                f"rebuild it with `argus-quarry archives index {self.name} --embeddings-only`"
+            )
+        exclude = None
+        if query.similar_to:
+            row = con.execute("SELECT pos FROM items WHERE id = ?", [query.similar_to]).fetchone()
+            if row is None:
+                raise ItemNotFound(f"{self.name}: no item {query.similar_to!r}")
+            if row[0] is None:
+                raise ArchiveUnavailable(f"{self.name}: item {query.similar_to!r} has no embedding")
+            exclude = int(row[0])
+        where, params = self._where(query)
+        # The reference item never ranks against itself; filtered rows need a pos to be rankable.
+        rankable = f"{where} AND pos IS NOT NULL" if where else " WHERE pos IS NOT NULL"
+        if exclude is not None:
+            rankable += f" AND pos <> {exclude}"
+        k = max(0, min(k, SEMANTIC_MAX))
+        if k == 0:
+            matches = con.execute(f"SELECT count(*) FROM items{rankable}", params).fetchone()[0]
+            return [], min(matches, SEMANTIC_MAX)
+        allowed = None
+        if where:
+            np = sem._np()
+            positions = con.execute(f"SELECT pos FROM items{rankable}", params).fetchnumpy()["pos"]
+            allowed = np.zeros(index.rows, dtype=bool)
+            allowed[np.asarray(positions, dtype=np.int64)] = True
+            matches = len(positions)
+        else:
+            matches = index.rows - (exclude is not None)
+        if exclude is not None:
+            vector = index.vector(exclude)
+        else:
+            try:
+                vector = sem.get_text_encoder(self.embedding_model).encode(query.semantic)
+            except sem.SemanticUnavailable as exc:
+                raise ArchiveUnavailable(str(exc)) from exc
+        hits = index.search(vector, k, allowed=allowed, exclude=exclude)
+        return hits, min(matches, SEMANTIC_MAX)
+
+    @staticmethod
+    def _rows_at(con, hits: list[sem.Hit]) -> list[dict[str, Any]]:  # noqa: ANN001
+        """Items for ``hits``, in hit order, each with its ``score``."""
+        if not hits:
+            return []
+        rows = con.execute(
+            f"SELECT {', '.join(ITEM_FIELDS)}, pos FROM items WHERE pos IN (SELECT unnest(?::BIGINT[]))",
+            [[h.pos for h in hits]],
+        ).fetchall()
+        by_pos = {r[-1]: dict(zip(ITEM_FIELDS, r[:-1], strict=True)) for r in rows}
+        return [{**by_pos[h.pos], "score": round(h.score, 4)} for h in hits if h.pos in by_pos]
+
     def search(self, query: ArchiveQuery, *, limit: int = 48, offset: int = 0) -> dict[str, Any]:
         limit = max(1, min(limit, PAGE_MAX))
+        if query.ranked:
+            with self._connect() as con:
+                hits, total = self._ranked(con, query, offset + limit)
+                items = self._rows_at(con, hits[offset:])
+            return {"total": total, "offset": offset, "limit": limit, "items": items, "ranked": True}
         where, params = self._where(query)
         cols = ", ".join(ITEM_FIELDS)
         with self._connect() as con:
@@ -482,8 +662,10 @@ class Archive(ABC):
         return dict(zip(ITEM_FIELDS, row, strict=True)) if row else None
 
     def count(self, query: ArchiveQuery) -> int:
-        where, params = self._where(query)
         with self._connect() as con:
+            if query.ranked:
+                return self._ranked(con, query, 0)[1]
+            where, params = self._where(query)
             return con.execute("SELECT count(*) FROM items" + where, params).fetchone()[0]
 
     # ── slice -> SourceRecord stream ──────────────────────────────────
@@ -493,6 +675,14 @@ class Archive(ABC):
         One query, read up front (a slice is at most ``SLICE_MAX`` rows), so the index
         connection is not held open while ingest downloads.
         """
+        if spec.query.ranked:
+            with self._connect() as con:
+                hits, _ = self._ranked(con, spec.query, spec.limit)
+                items = self._rows_at(con, hits)
+            for item in items:
+                item.pop("score", None)
+                yield self.to_record(item, category=spec.category, subject=spec.subject)
+            return
         where, params = self._where(spec.query)
         with self._connect() as con:
             rows = con.execute(

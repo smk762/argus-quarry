@@ -111,7 +111,7 @@ argus-quarry/
 │   │   ├── lac.py            # Library & Archives Canada  (Phase 2, Karsh)
 │   │   ├── europeana.py      # Europeana                  (Phase 3, rights-messy)
 │   │   └── flickr.py         # Flickr Commons (optional)  (Phase 3)
-│   ├── archives/             # PD12M / Megalith-10m metadata search (DuckDB index) — see §9
+│   ├── archives/             # PD12M / Megalith-10m metadata search (DuckDB index; semantic.py: CLIP vectors) — see §9
 │   └── server/               # read-only provenance API (`serve`, :8102) — see §9
 └── tests/
 ```
@@ -346,6 +346,19 @@ Next.js frontend, so:
   `QUARRY_ALLOW_FETCH=1`; when off, the UI downloads the slice JSON and the
   operator runs `argus-quarry archives fetch slice.json`. The provenance routes
   below remain strictly read-only.
+- **Semantic archive search (2026-11, #15):** PD12M's published CLIP ViT-L/14
+  embeddings get a vector index next to the DuckDB one (`archives/semantic.py`):
+  FAISS IVF-PQ for candidates, plus a local float16 copy for exact rescoring,
+  because the archived `.npy` files sit on a NAS where a random row costs ~40 ms.
+  `items.pos` maps a hit back to its item. It is the row in the metadata files
+  concatenated in sorted-filename order, which matches the embeddings: on 88
+  sampled rows, caption↔image cosine was 0.27 aligned against 0.09 one row off.
+  Filters run inside the vector search as a FAISS bitmap selector, so ranking
+  never post-filters a page empty. The text tower is an optional, lazy extra
+  (`[search]`) so the default install stays torch-free. No sibling serves CLIP
+  text embeddings, and quarry does not depend on cortex. This is ranking only:
+  it records nothing and never drives dedup (that is still `sha256`, and
+  near-dup selection is curator's).
 
 Strictly read-only means the *store*, not just the routes. The server opens the
 pool via `ProvenanceStore.open_readable()`, which never mkdirs, never migrates
