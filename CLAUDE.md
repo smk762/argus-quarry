@@ -28,7 +28,7 @@ Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
 `src/argus_quarry/`:
 
 - `models.py` — Pydantic v2 data contract. `Subject` (a thing to harvest) and `SourceRecord` (the source-independent record every downloader yields), plus the licence/category/slug helpers (`normalise_licence`, `is_accepted_licence`, `normalise_category`, `slugify_name`). `Photograph` mirrors the DB row.
-- `config.py` — `QuarryConfig`; all paths derive from `home` (`$QUARRY_HOME`, default `./quarry`). `from_env()` is what the CLI/compose use. Caps: megapixel, per-file bytes, total-pool budget.
+- `config.py` — `QuarryConfig`; all paths derive from `home` (`$QUARRY_HOME`, default `./quarry`). `from_env()` is what the CLI/compose use. Caps: megapixel (downscale on landing) and total-pool budget; `max_file_bytes` is reserved and not enforced.
 - `store.py` — SQLite provenance DB (`subjects` + `photographs`, WAL). Owns migrations, the `sha256 UNIQUE` dedup key, and the read-only open logic (`open_readable`, `ProvenanceUnavailable`).
 - `net.py` — `NetClient`: polite `httpx` with per-source token-bucket rate limits, backoff, and resumable (`Range`) streaming downloads.
 - `downloaders/` — one module per archive over `base.Downloader`, registered in `downloaders/__init__.py` (`commons` is the only Phase-1 source). Add a source here.

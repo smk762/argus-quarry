@@ -23,10 +23,12 @@ downstream by [argus-curator](https://github.com/smk762/argus-curator) and
 [argus-lens](https://github.com/smk762/argus-lens); quarry never re-implements
 them.
 
-> **Want a UI?** Quarry is CLI-only by design (see [DESIGN.md](DESIGN.md) §9).
-> The suite's web frontend — [**argus-studio**](https://github.com/smk762/argus-studio)
-> — surfaces the curation and captioning stages that consume quarry's output
-> (e.g. its `/curate` view scans the `<category>/<subject>/` tree quarry publishes).
+> **Want a UI?** Quarry has no UI of its own (see [DESIGN.md](DESIGN.md) §9), but
+> `argus-quarry serve` exposes an [HTTP API](#http-server) that the suite's web
+> frontend — [**argus-studio**](https://github.com/smk762/argus-studio) — uses for
+> its `/gallery` view. Studio also surfaces the curation and captioning stages that
+> consume quarry's output (e.g. its `/curate` view scans the `<category>/<subject>/`
+> tree quarry publishes).
 
 ```
 argus-quarry (NEW)          argus-curator (:8101)        argus-lens (:8100)        argus-studio
@@ -46,9 +48,10 @@ See [DESIGN.md](DESIGN.md) for the full rationale and phased plan.
   **quarantined, never landed**.
 - **Idempotent.** Exact-dedup by SHA256 (`UNIQUE` in the DB) and a `status`
   lifecycle mean reruns resume partials and never duplicate bytes.
-- **Bounded.** A per-file resolution/size cap and a total-archive GB budget keep
-  the pool predictable; the full-resolution URL is always retained for later
-  re-fetch.
+- **Bounded.** A per-file megapixel cap (larger images are downscaled on landing)
+  and a total-archive GB budget keep the pool predictable; the full-resolution URL
+  is always retained for later re-fetch. There is no per-file *byte* cap on
+  downloads.
 - **Source-independent.** Every downloader yields the same `SourceRecord`, so
   the pipeline never learns which archive a file came from.
 - **Category-sorted.** Subjects carry a category (identity / wardrobe / setting /
@@ -111,9 +114,15 @@ argus-quarry verify              # re-check files decode + match recorded SHA256
 | `verify` | Re-check landed files exist, decode, and match their recorded SHA256 |
 | `subjects` | Show the subject seed(s) downloaders harvest around (filter by `--category`) |
 | `serve`  | Start the read-only provenance HTTP API on `:8102` (needs the `server` extra) |
+| `archives status` | Show each [archive](#public-domain-archives)'s configured dir, presence, index state and item count |
+| `archives index [NAMES…]` | Build (or rebuild) the DuckDB search index under `$QUARRY_HOME/cache/archives/`; `--threads` (default: all cores), `--memory-limit` (DuckDB ceiling; past it, joins spill to disk) |
+| `archives search NAME` | Search an indexed archive: `--q`, `--exclude`, `--collection` (repeatable), `--min-short-side`, `--limit` |
+| `archives fetch SPEC` | Land a slice JSON through normal ingest; `--dry-run` lists what would be fetched |
 
 `run`, `fetch`, `export` and `list` all accept `--category`
 (`identity` / `wardrobe` / `setting` / `concept`); with none given they span every category.
+A hidden `people` command remains as a backward-compatible alias from the pre-0.2,
+identity-only releases (use `subjects --category identity`).
 
 ## Layout produced
 
@@ -158,7 +167,9 @@ Copy `.env.example` to `.env`. Key knobs:
 |---|---|---|
 | `QUARRY_HOME` | `./quarry` | Raw pool + DB + cache + logs (side-car dir) |
 | `QUARRY_MAX_GB` | `40` | Total raw-pool ceiling; `0` = unlimited |
+| `QUARRY_MAX_MEGAPIXELS` | `12` | Per-file resolution cap; larger images are downscaled on landing |
 | `COMMONS_USER_AGENT` | descriptive default | Polite UA (Commons/LoC expect one) |
+| `QUARRY_USER_AGENT` | _(unset)_ | Fallback UA, used when `COMMONS_USER_AGENT` is unset |
 | `DATASET_DIR` | `./data` | Published view `export` writes into |
 | `QUARRY_PD12M_DIR` / `QUARRY_MEGALITH_DIR` | _(unset)_ | Archived metadata for the [archives](#public-domain-archives) (`<root>/pd12m`, `<root>/megalith`) |
 | `QUARRY_ALLOW_FETCH` | _(unset = off)_ | Let `POST /archives/{name}/fetch` land a slice from the server |
@@ -243,7 +254,7 @@ never leaks a filesystem path. Point an orchestrator's *readiness* probe at
 
 | Endpoint | Returns |
 |---|---|
-| `GET /health` | Liveness: `200 {status, service, version, quarry_home}` while the process is up |
+| `GET /health` | Liveness: `200 {status, service, version, quarry_home, fetch_allowed}` while the process is up |
 | `GET /ready` | Readiness: `200 {status: ready, service, database: ok}`, or `503 {status: unavailable, service, database}` when the pool cannot be served |
 | `GET /stats` | Counts by status / category / source / licence + `total_bytes` (mirrors `stats`) |
 | `GET /subjects?category=` | Distinct subjects with landed photo counts: `{subjects: [{folder, category, photo_count}]}` |
