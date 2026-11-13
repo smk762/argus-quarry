@@ -65,6 +65,9 @@ pip install argus-quarry            # library + downloaders
 pip install "argus-quarry[cli]"     # + the argus-quarry command
 pip install "argus-quarry[phash]"   # + opportunistic perceptual-hash metadata
 pip install "argus-quarry[server]"  # + the read-only provenance HTTP API (serve)
+pip install "argus-quarry[archives]"     # + PD12M / Megalith metadata search (DuckDB)
+pip install "argus-quarry[embeddings]"   # + PD12M vector index and "more like this" (faiss, numpy)
+pip install "argus-quarry[search]"       # + text queries by meaning (CLIP text tower: transformers, torch)
 ```
 
 For development the suite uses [uv](https://docs.astral.sh/uv/) (works on PEP 668
@@ -115,8 +118,8 @@ argus-quarry verify              # re-check files decode + match recorded SHA256
 | `subjects` | Show the subject seed(s) downloaders harvest around (filter by `--category`) |
 | `serve`  | Start the read-only provenance HTTP API on `:8102` (needs the `server` extra) |
 | `archives status` | Show each [archive](#public-domain-archives)'s configured dir, presence, index state and item count |
-| `archives index [NAMES…]` | Build (or rebuild) the DuckDB search index under `$QUARRY_HOME/cache/archives/`; `--threads` (default: all cores), `--memory-limit` (DuckDB ceiling; past it, joins spill to disk) |
-| `archives search NAME` | Search an indexed archive: `--q`, `--exclude`, `--collection` (repeatable), `--min-short-side`, `--limit` |
+| `archives index [NAMES…]` | Build (or rebuild) the DuckDB search index under `$QUARRY_HOME/cache/archives/`; `--threads` (default: all cores), `--memory-limit` (DuckDB ceiling; past it, joins spill to disk); `--embeddings` also builds PD12M's [vector index](#semantic-search-pd12m), `--embeddings-only` builds just that |
+| `archives search NAME` | Search an indexed archive: `--q`, `--exclude`, `--collection` (repeatable), `--min-short-side`, `--semantic TEXT` or `--similar-to ID` (rank by meaning / likeness), `--limit` |
 | `archives fetch SPEC` | Land a slice JSON through normal ingest; `--dry-run` lists what would be fetched |
 | `archives mirror-index` | Index tar-member offsets in Megalith's [Drawthings mirror](#megalith-mirror) so slices can fall back to it (resumable); `--shards 0-99`, `--workers`, `--rps` |
 
@@ -313,13 +316,53 @@ A slice is a query plus where it lands:
  "query": {"q": "harbour boats", "collections": ["Rijksmuseum"], "min_short_side": 1024, "sort": "largest"}}
 ```
 
+### Semantic search (PD12M)
+
+PD12M publishes a CLIP ViT-L/14 embedding for every image, row-aligned with its
+metadata. With a vector index built from them, an archive search can rank **by
+meaning** (`semantic="a woman in a wool coat, outdoors"`) or **by example**
+(`similar_to=<item id>`, "more like this"), combined with any of the filters
+above. `similar_to` also finds near-duplicates before anything is downloaded:
+re-uploads of the same image score about 0.95 or higher.
+
+```bash
+pip install "argus-quarry[cli,search]"       # [embeddings] is enough for the build and similar_to
+argus-quarry archives index pd12m --embeddings-only   # reuses the metadata index; or --embeddings for both
+argus-quarry archives search pd12m --semantic "a woman in a wool coat, outdoors" --min-short-side 1024
+argus-quarry archives search pd12m --similar-to <id>
+```
+
+- **The build** streams the 13 `.npy` files once, in chunks, so its memory stays
+  bounded (3.4 GB peak on the real archive). It writes an IVF-PQ index (FAISS, 1.3 GB) and a float16
+  copy of the embeddings (19 GB) under `$QUARRY_HOME/cache/archives/`. The copy
+  is local because a random row read from a NAS share costs about 40 ms, and
+  every query rescores its candidates exactly from it. On the real archive the
+  build took 13 minutes with 8 threads. A rebuild swaps in atomically, like the metadata index.
+- **A query** finds candidates in the IVF-PQ index and rescores them exactly.
+  Filters are applied inside the vector search, so a narrow filter still fills
+  its page. When 20,000 items or fewer match, all of them are scored exactly.
+  Results come best first. `total` counts the matching items, capped at 5,000
+  (a ranked query or slice goes no deeper), and `sort` is ignored. Measured on
+  the real 12.4M set: about 0.5 s cold and 0.15 s warm, with or without
+  collection / tone / size / medium filters, plus about 40 ms to encode the text.
+  Caption terms (`q`) add their usual substring scan (about 1.5 s), and ranking
+  a full 5,000-item slice takes about 5 s.
+- **Text queries** need the OpenAI `clip-vit-large-patch14` text tower, the model
+  PD12M's embeddings came from. It loads on the first query (about 10 s and
+  0.5 GB, CPU unless CUDA is available) from the Hugging Face cache, or from the path in
+  `QUARRY_CLIP_MODEL`. `similar_to` needs no model.
+- A saved slice keeps its `semantic` / `similar_to`, so `archives fetch` lands
+  the top `limit` items in ranked order.
+- Megalith publishes no embeddings, so it has no semantic search; computing them
+  would mean downloading every image.
+
 The server exposes the same thing over HTTP. Every route is `GET` except the fetch:
 
 | Route | Returns |
 |---|---|
-| `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`) and `fetch_allowed` |
+| `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`, and `semantic`: `{indexed, vectors, model, built_at}` or `null` when the archive has no embeddings) and `fetch_allowed` |
 | `GET /archives/{name}/facets` | collections, licences and MIME types with counts |
-| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise) |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |
