@@ -54,3 +54,7 @@ Run one test: `uv run --no-sync pytest tests/test_ingest.py::test_name -q`.
 - **Full-res `remote_url` is always retained** even when the megapixel/byte caps downscale a landed file, so it can be re-fetched at original size. The total-pool budget (`$QUARRY_MAX_GB`) stops a run *cleanly* and resumably (`BudgetReached`).
 - **Backward-compat surface is intentional.** Pre-0.2 was person/portrait-only: keep the `Person`/`PortraitRecord` aliases, the hidden `people` command, and `load_people` importable. `store._migrate` upgrades legacy pools (people→subjects, flat→category layout) in place — preserve that.
 - **Versioning is git-tag-derived** (`hatch-vcs`); `src/argus_quarry/_version.py` is generated (gitignored). Never hand-edit a version; tag `vX.Y.Z` to release (PyPI via OIDC + GHCR image). Ruff line-length 120, target py311; `structlog` for logging; Pydantic v2 everywhere.
+
+## Branches
+
+`dev` is the default branch and the base for every PR. Cut feature branches from `origin/dev` and bring them up to date by merging `origin/dev`, never `main`. Never open a PR against `main` or push work to it directly: `main` must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected and needs a PR, merge the release PR, then immediately merge `main` back into `dev` so the merge commit is not left on `main` alone.
