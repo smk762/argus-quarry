@@ -1,6 +1,10 @@
 # argus-quarry — Design Doc (Draft)
 
-> Status: **proposal / plan only** — no code yet.
+> Status: **implemented** (released through v0.3.x): CLI, ingest, provenance store,
+> read-only server and the public-domain archives. Still pending: the Phase 2/3
+> downloaders (LoC, Smithsonian, Rijksmuseum, LAC, Europeana, Flickr Commons) and
+> the Wikidata SPARQL subject harvester. The rest of this doc keeps its original
+> design rationale; where the build diverged, the section says so.
 > Owner: smk762 · Suite: Argus · Sibling of `argus-lens`, `argus-curator`, `argus-studio`.
 
 The *quarry* is where the suite digs up raw material. `argus-quarry` acquires
@@ -91,7 +95,7 @@ argus-quarry/
 │   ├── net.py                # httpx client: rate limit, retry/backoff, resume
 │   ├── config.py             # QuarryConfig: per-source settings, resolution + total-GB caps
 │   ├── subjects.py           # load per-category seed lists; optional Wikidata SPARQL harvester
-│   ├── cli.py                # typer app: run / fetch / export / list / stats / verify / subjects
+│   ├── cli.py                # typer app: run / fetch / export / list / stats / verify / subjects / serve / archives
 │   ├── seeds/
 │   │   ├── identity.yaml     # curated persons seed (name, wikidata_id, aliases)
 │   │   ├── wardrobe.yaml     # garments / outfits
@@ -107,6 +111,7 @@ argus-quarry/
 │   │   ├── lac.py            # Library & Archives Canada  (Phase 2, Karsh)
 │   │   ├── europeana.py      # Europeana                  (Phase 3, rights-messy)
 │   │   └── flickr.py         # Flickr Commons (optional)  (Phase 3)
+│   ├── archives/             # PD12M / Megalith-10m metadata search (DuckDB index) — see §9
 │   └── server/               # read-only provenance API (`serve`, :8102) — see §9
 └── tests/
 ```
@@ -188,7 +193,9 @@ licence · attribution · width · height · file_size · filename · sha256 (un
 phash (nullable, informational) · remote_url · status · downloaded_at`
 
 - `sha256` is `UNIQUE` → exact-dup ingest is a no-op (idempotent reruns).
-- `status` tracks resumability: `pending | downloading | complete | failed`.
+- `status` tracks resumability: `pending | downloading | complete | failed`, plus
+  the terminal `duplicate` (identical bytes already landed) and `quarantined`
+  (no accepted licence) states.
 - `phash` recorded opportunistically (cheap with Pillow+ImageHash) but **never**
   drives dedup here — that's curator's job.
 - SQLite in WAL mode; single writer, safe concurrent readers.
@@ -249,9 +256,12 @@ Each source module must:
 - **Record licence + attribution** — a record with no licence is quarantined,
   not landed.
 - **Prefer high resolution within a configurable cap** (Q3): request the largest
-  rendition the API offers, but downscale/skip past a per-file ceiling
-  (`QuarryConfig.max_megapixels` default ~12 MP, `max_file_bytes` default a few
-  MB), overridable per run. The **full-resolution `remote_url` is always kept in
+  rendition the API offers, but downscale past a per-file ceiling
+  (`QuarryConfig.max_megapixels`, default 12 MP, env `QUARRY_MAX_MEGAPIXELS`).
+  *As built, only the megapixel cap is enforced*: `max_file_bytes` exists in
+  `QuarryConfig` but ingest does not pass it to the downloader, since a byte cap
+  on the download would reject large originals that the megapixel cap can
+  downscale instead. The **full-resolution `remote_url` is always kept in
   the DB**, so a capped image can be re-fetched at original size on demand
   without losing provenance. Keeps the archive inside the 20–40 GB budget by
   default while never throwing away the ability to go bigger.
@@ -414,7 +424,7 @@ CV/search/curation stages rather than duplicating them.
    (identity / wardrobe / setting / concept) for deterministic dev/QA (Phase 1),
    plus an optional Wikidata SPARQL harvester (identity) to scale toward 5–7k
    (Phase 2). See §4. ✅
-3. **Resolution** — **configurable per-file cap** (~12 MP / few MB default),
+3. **Resolution** — **configurable per-file cap** (12 MP default; megapixels only, see §7),
    full-res `remote_url` retained for on-demand re-fetch; overridable per run.
    Keeps the 20–40 GB budget without discarding fidelity. See §7. ✅
 4. **`QUARRY_HOME`** — sibling **`./quarry`** dir, fully outside the image tree.

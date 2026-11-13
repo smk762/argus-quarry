@@ -33,9 +33,11 @@ class QuarryConfig(BaseModel):
 
     home: Path = Field(default_factory=lambda: Path("./quarry"))
 
-    # Per-file resolution / size ceilings (Q3). The full-res remote_url is always
+    # Per-file resolution ceiling (Q3). The full-res remote_url is always
     # kept in the DB, so a capped image can be re-fetched at original size later.
     max_megapixels: float = 12.0
+    # Reserved, not enforced: ingest does not pass this to NetClient.download, since a
+    # byte cap on the download would reject large originals the megapixel cap can downscale.
     max_file_bytes: int = 15 * 1024 * 1024
 
     # Total raw-pool ceiling in bytes. 0 = unlimited.
