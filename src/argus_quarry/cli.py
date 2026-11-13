@@ -309,7 +309,7 @@ def _archive_errors():
     except (ArchiveUnavailable, ValidationError, OSError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
-    except KeyError as exc:  # get_archive: unknown archive name
+    except LookupError as exc:  # get_archive: unknown archive name; ItemNotFound: unknown similar_to id
         typer.echo(f"error: {exc.args[0] if exc.args else exc}", err=True)
         raise typer.Exit(2) from exc
 
@@ -332,7 +332,11 @@ def archives_status() -> None:
         info = get_archive(name, config).status()
         where = config.archive_dirs.get(name) or f"unset (QUARRY_{name.upper()}_DIR)"
         items = f"{info['items']:,} items" if info["items"] is not None else "not indexed"
-        typer.echo(f"  {name:<9} {items:<18} {where}")
+        semantic = info.get("semantic")
+        vectors = ""
+        if semantic:
+            vectors = f"  [{semantic['vectors']:,} vectors]" if semantic["indexed"] else "  [embeddings not indexed]"
+        typer.echo(f"  {name:<9} {items:<18} {where}{vectors}")
 
 
 @archives_app.command("index")
@@ -341,6 +345,15 @@ def archives_index(
     threads: int | None = Option(None, "--threads", help="DuckDB threads (default: all cores)"),
     memory_limit: str = Option(
         DEFAULT_BUILD_MEMORY, "--memory-limit", help="DuckDB memory ceiling for the build; past it, joins spill to disk"
+    ),
+    embeddings: bool = Option(
+        False,
+        "--embeddings",
+        help="Also build the vector index for semantic / similar_to search from the archive's published "
+        "embeddings (PD12M only; needs the [embeddings] extra, ~20 GB of disk and ~1 h for the full set)",
+    ),
+    embeddings_only: bool = Option(
+        False, "--embeddings-only", help="Build only the vector index, reusing the current metadata index"
     ),
 ) -> None:
     """Build (or rebuild) the search index for each archive under $QUARRY_HOME/cache/archives/."""
@@ -358,9 +371,29 @@ def archives_index(
         with _archive_errors():
             archive = get_archive(name, config)
             started = time.monotonic()
-            typer.echo(f"Indexing {name} from {archive.root} …")
-            n = archive.build_index(threads=threads, memory_limit=memory_limit)
-        typer.echo(f"  {n:,} items -> {archive.index_path} ({time.monotonic() - started:.0f}s)")
+            if not embeddings_only:
+                typer.echo(f"Indexing {name} from {archive.root} …")
+                n = archive.build_index(threads=threads, memory_limit=memory_limit)
+                typer.echo(f"  {n:,} items -> {archive.index_path} ({time.monotonic() - started:.0f}s)")
+            if not (embeddings or embeddings_only):
+                continue
+            if not archive.embedding_model:
+                typer.echo(f"  {name}: publishes no embeddings, skipped")
+                continue
+            started = time.monotonic()
+            typer.echo(f"Indexing {name} embeddings …")
+
+            def progress(done: int, total: int, *, _t0: float = started, _last: list[float] = [0.0]) -> None:  # noqa: B006
+                now = time.monotonic()
+                if now - _last[0] >= 30 or done == total:
+                    _last[0] = now
+                    typer.echo(f"  {done:,}/{total:,} vectors ({now - _t0:.0f}s)")
+
+            meta = archive.build_embeddings(threads=threads, progress=progress)
+            typer.echo(
+                f"  {meta['rows']:,} vectors ({meta['factory']}) -> {config.archive_index_dir / meta['dir']} "
+                f"({time.monotonic() - started:.0f}s)"
+            )
 
 
 @archives_app.command("search")
@@ -374,6 +407,8 @@ def archives_search(
         help="Institution / Flickr owner (repeatable, or comma-joined with no space after the comma)",
     ),
     min_short_side: int | None = Option(None, "--min-short-side", help="Minimum short side in px"),
+    semantic: str | None = Option(None, "--semantic", help="Rank by meaning (CLIP text query; needs [search])"),
+    similar_to: str | None = Option(None, "--similar-to", help="Rank by likeness to this item id"),
     limit: int = Option(20, "--limit", help="Rows to print"),
 ) -> None:
     """Print a page of matches — a quick terminal check before saving a slice."""
@@ -382,13 +417,19 @@ def archives_search(
 
     with _archive_errors():
         query = ArchiveQuery(
-            q=q, exclude=exclude, collections=split_collections(collection), min_short_side=min_short_side
+            q=q,
+            exclude=exclude,
+            collections=split_collections(collection),
+            min_short_side=min_short_side,
+            semantic=semantic,
+            similar_to=similar_to,
         )
         page = get_archive(name, QuarryConfig.from_env()).search(query, limit=limit)
     for item in page["items"]:
         size = f"{item['width']}x{item['height']}" if item["width"] else "?x?"
+        score = f"{item['score']:.3f} " if "score" in item else ""
         typer.echo(
-            f"  {item['id']:<36} {size:<11} {(item['collection'] or '')[:24]:<24} {(item['caption'] or '')[:70]}"
+            f"  {score}{item['id']:<36} {size:<11} {(item['collection'] or '')[:24]:<24} {(item['caption'] or '')[:70]}"
         )
     typer.echo(f"\n{page['total']:,} match(es).")
 

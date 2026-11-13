@@ -22,6 +22,7 @@ Routes:
     GET  /archives/{name}/facets          -> collections / licences / mimes with counts
     GET  /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=
                                  &min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=
+                                 &semantic=<text> | &similar_to=<id>   -> ranked by CLIP similarity, each item a score
     GET  /archives/{name}/items/{id}
     GET  /archives/{name}/thumb?id=&size= -> image/webp (PD12M) or a redirect to Flickr's own small size
     GET  /archives/{name}/slice?<search filters>&category=&subject=&limit=
@@ -62,6 +63,7 @@ from argus_quarry.archives import (
     SLICE_MAX,
     ArchiveQuery,
     ArchiveUnavailable,
+    ItemNotFound,
     SliceSpec,
     available_archives,
     get_archive,
@@ -386,7 +388,11 @@ def _archive_query(
     year_min: int | None = Query(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year >="),
     year_max: int | None = Query(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year <="),
     ids: str | None = Query(None, description="comma-separated explicit selection"),
-    sort: Literal["shuffle", "largest"] = Query("shuffle"),
+    sort: Literal["shuffle", "largest"] = Query("shuffle", description="ignored when semantic/similar_to rank"),
+    semantic: str | None = Query(
+        None, max_length=1000, description="rank by meaning (CLIP text query); archives with embeddings only"
+    ),
+    similar_to: str | None = Query(None, description="rank by likeness to this item id (more like this)"),
 ):
     try:
         return ArchiveQuery(
@@ -406,6 +412,8 @@ def _archive_query(
             year_max=year_max,
             ids=_split_csv(ids) or [],
             sort=sort,
+            semantic=semantic,
+            similar_to=similar_to,
         )
     except ValidationError as exc:  # e.g. an unknown medium: the caller's mistake, not a 500
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False)) from exc
@@ -446,6 +454,8 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
             return await asyncio.to_thread(fn, *args, **kwargs)
         except ArchiveUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ItemNotFound as exc:  # similar_to names an id the archive lacks
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/archives")
     async def archives() -> dict[str, Any]:
