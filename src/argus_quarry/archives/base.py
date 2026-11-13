@@ -367,9 +367,11 @@ class Archive(ABC):
                 f"CREATE TABLE items AS SELECT *, hash(id || 'argus') AS rnd, {_derived_sql(self.default_medium)} "
                 f"FROM ({self._select_sql(root)})"
             )
-            # Ranked queries join their hits back by pos: without an index that is a scan
-            # of every row (~1.5 s on PD12M), with it ~5 ms.
-            con.execute("CREATE INDEX items_pos ON items (pos)")
+            if self.embedding_model:
+                # Ranked queries join their hits back by pos: without an index that is a scan
+                # of every row (~1.5 s on PD12M), with it ~5 ms. Archives with no embeddings
+                # have an all-NULL pos and never rank, so they skip it.
+                con.execute("CREATE INDEX items_pos ON items (pos)")
             con.execute("CREATE TABLE meta AS SELECT ? AS schema_version, now() AS built_at", [INDEX_SCHEMA])
             con.execute(
                 "CREATE TABLE facets AS SELECT collection, count(*) AS n FROM items "
@@ -547,6 +549,14 @@ class Archive(ABC):
         bitmap is built, so ``count`` stays cheap for the slice and fetch routes.
         """
         index = self._vector_index()
+        # The vector index maps hits by row; after a metadata rebuild over different files
+        # its rows no longer line up with items.pos (wrong items, or an out-of-range 500).
+        n_items = con.execute("SELECT count(*) FROM items").fetchone()[0]
+        if n_items != index.rows:
+            raise ArchiveUnavailable(
+                f"{self.name}: embeddings index has {index.rows:,} rows but the metadata index {n_items:,} — "
+                f"rebuild it with `argus-quarry archives index {self.name} --embeddings-only`"
+            )
         exclude = None
         if query.similar_to:
             row = con.execute("SELECT pos FROM items WHERE id = ?", [query.similar_to]).fetchone()
@@ -652,10 +662,10 @@ class Archive(ABC):
         return dict(zip(ITEM_FIELDS, row, strict=True)) if row else None
 
     def count(self, query: ArchiveQuery) -> int:
-        where, params = self._where(query)
         with self._connect() as con:
             if query.ranked:
                 return self._ranked(con, query, 0)[1]
+            where, params = self._where(query)
             return con.execute("SELECT count(*) FROM items" + where, params).fetchone()[0]
 
     # ── slice -> SourceRecord stream ──────────────────────────────────

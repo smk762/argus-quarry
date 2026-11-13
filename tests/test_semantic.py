@@ -289,3 +289,17 @@ def test_server_semantic_and_similar_to(built, encoder, monkeypatch):
 def test_server_semantic_without_index_is_503(cfg, encoder, monkeypatch):
     resp = _client(cfg, monkeypatch).get("/archives/pd12m/search", params={"semantic": "cat"})
     assert resp.status_code == 503 and "--embeddings" in resp.json()["detail"]
+
+
+def test_metadata_rebuilt_over_more_rows_is_unavailable_not_misaligned(built, encoder, pd12m_root):
+    # Re-archived metadata gains a file; the vector index still has the old row count.
+    _write_parquet(
+        pd12m_root / "metadata" / "metadata" / "pd12m.003.parquet",
+        [{"id": "p9999", "url": "https://s3.example/p9999.jpg", "caption": "A photo of a cat", "width": 1,
+          "height": 1, "mime_type": "image/jpeg", "hash": "h", "license": "x", "source": "Even"}],
+    )  # fmt: skip
+    archive = get_archive("pd12m", built)
+    archive.build_index()
+    for query in (ArchiveQuery(semantic="cat", collections=["Even"]), ArchiveQuery(similar_to="p9999")):
+        with pytest.raises(ArchiveUnavailable, match="--embeddings-only"):
+            archive.search(query)

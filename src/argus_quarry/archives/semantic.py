@@ -74,12 +74,16 @@ def _faiss():
     return faiss
 
 
-def default_factory(rows: int) -> str:
-    """The FAISS index for ``rows`` vectors: exact when small, IVF-PQ (96 bytes/vector) when large."""
+def default_factory(rows: int, dim: int = 768) -> str:
+    """The FAISS index for ``rows`` vectors: exact when small, IVF-PQ (up to 96 bytes/vector) when large.
+
+    PQ needs its sub-quantizer count to divide ``dim``: 96 for CLIP ViT-L/14's 768.
+    """
     if rows <= FLAT_MAX:
         return "Flat"
     nlist = 4096 if rows >= 2_000_000 else 1024
-    return f"IVF{nlist},PQ96"
+    m = next(m for m in range(min(96, dim), 0, -1) if dim % m == 0)
+    return f"IVF{nlist},PQ{m}"
 
 
 # ── build ────────────────────────────────────────────────────────────────
@@ -168,7 +172,7 @@ def build_vector_index(
         )
     if threads:
         faiss.omp_set_num_threads(int(threads))
-    factory = factory or default_factory(total)
+    factory = factory or default_factory(total, dim)
 
     out_root.mkdir(parents=True, exist_ok=True)
     token = f"{datetime.now(UTC):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:8]}"
