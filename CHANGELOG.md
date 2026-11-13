@@ -2,6 +2,12 @@
 
 All notable changes to argus-quarry are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Versions come from git tags (`hatch-vcs`). A `v*` tag publishes the PyPI package and `ghcr.io/smk762/argus-quarry`.
 
+## [Unreleased]
+
+### Added
+
+- A `v*` tag now also creates the GitHub Release, after the PyPI publish succeeds. Its notes are that version's section of this file (a missing section fails the job), it carries the built wheel and sdist, a re-run updates it in place, and `-` / `rc` / `a<n>` / `b<n>` tags are marked pre-release ([#21](https://github.com/smk762/argus-quarry/issues/21)).
+
 ## [0.3.1] - 2026-10-24
 
 ### Fixed
