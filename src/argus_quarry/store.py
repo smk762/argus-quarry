@@ -397,13 +397,15 @@ class ProvenanceStore:
         height: int | None,
         file_size: int,
         phash: str | None = None,
+        remote_url: str | None = None,
     ) -> None:
+        """Record a landed file. ``remote_url`` replaces the row's when the bytes came from a mirror."""
         self._conn.execute(
             """UPDATE photographs
                    SET status = 'complete', filename = ?, sha256 = ?, width = ?, height = ?,
-                       file_size = ?, phash = ?, downloaded_at = ?
+                       file_size = ?, phash = ?, downloaded_at = ?, remote_url = COALESCE(?, remote_url)
                    WHERE id = ?""",
-            (filename, sha256, width, height, file_size, phash, _now(), photo_id),
+            (filename, sha256, width, height, file_size, phash, _now(), remote_url, photo_id),
         )
         self._conn.commit()
 

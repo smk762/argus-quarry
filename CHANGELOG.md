@@ -6,6 +6,16 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Added
 
+- **Megalith mirror fallback** ([#16](https://github.com/smk762/argus-quarry/issues/16)). A Megalith photo that Flickr reports gone (404 / 410 / 403) now lands from the [Drawthings mirror](https://huggingface.co/datasets/drawthingsai/megalith-10m) with a single byte-range read of its tar shard.
+  - `argus-quarry archives mirror-index` builds the member-offset index (`--shards`, `--workers`, `--rps`). It reads about one 8 KB range per image, saves each shard's offsets when that shard is done (so it resumes), and pins them to the archived dataset revision. `archives status` shows progress.
+  - Provenance names the host: a mirrored photograph's `remote_url` is the pinned shard URL plus `#bytes=START-END`, and its `source_url` is still the Flickr page.
+  - A slice's `prefer_mirror: true` fetches from the mirror first and from Flickr only for photos the mirror lacks.
+  - The fallback is source-independent: `SourceRecord.alternates` and `prefer_alternates`, decided in ingest. The fetch route's `item` frames carry `fetched_from`.
+
+### Changed
+
+- A download that gets 403 / 404 / 410 now fails at once with `RemoteGone` instead of being retried with backoff.
+
 - A `v*` tag now also creates the GitHub Release, after the PyPI publish succeeds. Its notes are that version's section of this file (a missing section fails the job), it carries the built wheel and sdist, a re-run updates it in place, and `-` / `rc` / `a<n>` / `b<n>` tags are marked pre-release ([#21](https://github.com/smk762/argus-quarry/issues/21)).
 
 ## [0.3.1] - 2026-10-24

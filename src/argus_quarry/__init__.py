@@ -24,6 +24,7 @@ except ImportError:  # running from a source checkout that hasn't been built
 from argus_quarry.config import QuarryConfig, SourceRate
 from argus_quarry.models import (
     SUBJECT_CATEGORIES,
+    Alternate,
     Person,
     Photograph,
     PortraitRecord,
@@ -37,6 +38,7 @@ from argus_quarry.models import (
 
 __all__ = [
     "__version__",
+    "Alternate",
     "QuarryConfig",
     "SourceRate",
     "SUBJECT_CATEGORIES",

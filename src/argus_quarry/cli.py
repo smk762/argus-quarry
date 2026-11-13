@@ -333,6 +333,61 @@ def archives_status() -> None:
         where = config.archive_dirs.get(name) or f"unset (QUARRY_{name.upper()}_DIR)"
         items = f"{info['items']:,} items" if info["items"] is not None else "not indexed"
         typer.echo(f"  {name:<9} {items:<18} {where}")
+    if "megalith" in config.archive_dirs:
+        from argus_quarry.archives.mirror import MegalithMirror
+
+        mirror = MegalithMirror(config).status()
+        members = f"{mirror['members']:,} members" if mirror["members"] is not None else "no lookup table"
+        typer.echo(
+            f"  {'mirror':<9} {members:<18} {mirror['scanned']}/{mirror['shards']} shards scanned "
+            f"({mirror['repo']}@{(mirror['revision'] or 'unknown')[:10]})"
+        )
+
+
+def _parse_shards(spec: str) -> list[str]:
+    """``"0-9,42"`` -> ``["00000", …, "00009", "00042"]``."""
+    out: list[str] = []
+    for part in (p.strip() for p in spec.split(",")):
+        if not part:
+            continue
+        lo, sep, hi = part.partition("-")
+        try:
+            first, last = int(lo), int(hi) if sep else int(lo)
+        except ValueError:
+            raise typer.BadParameter(f"{part!r} is not a shard number or range like 0-99") from None
+        out += [f"{n:05d}" for n in range(first, last + 1)]
+    return out
+
+
+@archives_app.command("mirror-index")
+def archives_mirror_index(
+    shards: str | None = Option(None, "--shards", help="Shards to scan, e.g. 0-99,500 (default: all)"),
+    workers: int = Option(4, "--workers", min=1, help="Shards scanned in parallel"),
+    rps: float = Option(20.0, "--rps", min=0.1, help="Range requests per second to the mirror, across workers"),
+) -> None:
+    """Index tar-member offsets in Megalith's Drawthings mirror (resumable), so slices can
+    fall back to it when a Flickr photo is gone. About one range read per image."""
+    from argus_quarry.archives.mirror import RATE_SOURCE, MegalithMirror
+    from argus_quarry.config import QuarryConfig, SourceRate
+    from argus_quarry.net import NetClient
+
+    config = QuarryConfig.from_env()
+    config.rates[RATE_SOURCE] = SourceRate(rate_per_sec=rps, burst=max(1, int(rps)))
+    mirror = MegalithMirror(config)
+    wanted = _parse_shards(shards) if shards else None
+
+    def progress(shard: str, members: int | None, error: str | None) -> None:
+        typer.echo(f"  {shard}: " + (f"FAILED {error}" if error else f"{members:,} images"))
+
+    with _archive_errors(), NetClient(config) as net:
+        typer.echo(f"Scanning {mirror.shards_dir} (already scanned: {len(mirror.scanned())}) …")
+        result = mirror.build(net, shards=wanted, workers=workers, progress=progress)
+    typer.echo(
+        f"  {result['scanned']}/{result['shards']} shards scanned, {result['members']:,} members -> {mirror.db_path}"
+    )
+    if result["failed"]:
+        typer.echo(f"  {len(result['failed'])} shard(s) failed; re-run to retry them", err=True)
+        raise typer.Exit(1)
 
 
 @archives_app.command("index")

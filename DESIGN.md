@@ -111,7 +111,7 @@ argus-quarry/
 │   │   ├── lac.py            # Library & Archives Canada  (Phase 2, Karsh)
 │   │   ├── europeana.py      # Europeana                  (Phase 3, rights-messy)
 │   │   └── flickr.py         # Flickr Commons (optional)  (Phase 3)
-│   ├── archives/             # PD12M / Megalith-10m metadata search (DuckDB index) — see §9
+│   ├── archives/             # PD12M / Megalith-10m metadata search (DuckDB index), Megalith mirror offsets — see §9
 │   └── server/               # read-only provenance API (`serve`, :8102) — see §9
 └── tests/
 ```
@@ -346,6 +346,11 @@ Next.js frontend, so:
   `QUARRY_ALLOW_FETCH=1`; when off, the UI downloads the slice JSON and the
   operator runs `argus-quarry archives fetch slice.json`. The provenance routes
   below remain strictly read-only.
+- **Megalith mirror (2026-11, #16):** Flickr photos deleted since Megalith was
+  built return 404/410/403. `archives mirror-index` records where each image sits
+  in the Drawthings mirror's tar shards, and ingest falls back to a byte-range read
+  of that member. The fallback is source-independent (`SourceRecord.alternates`),
+  and the recorded `remote_url` names the host the bytes came from.
 
 Strictly read-only means the *store*, not just the routes. The server opens the
 pool via `ProvenanceStore.open_readable()`, which never mkdirs, never migrates

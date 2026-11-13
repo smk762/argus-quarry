@@ -11,6 +11,7 @@ an O(1) running byte counter seeded once from the DB. Files land under
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from PIL import Image
 
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import Photograph, SourceRecord, Subject, is_accepted_licence, normalise_licence
-from argus_quarry.net import NetClient, SizeCapExceeded
+from argus_quarry.net import NetClient, RemoteGone, SizeCapExceeded, split_byte_range
 from argus_quarry.store import ProvenanceStore
 
 logger = structlog.get_logger()
@@ -40,10 +41,12 @@ class IngestOutcome:
     filename: str | None = None
     file_size: int = 0
     reason: str | None = None
+    #: The URL the bytes actually came from (a mirror's, when the primary was gone).
+    fetched_from: str | None = None
 
 
 def _ext_for(remote_url: str) -> str:
-    ext = Path(remote_url.split("?")[0]).suffix.lower()
+    ext = Path(split_byte_range(remote_url)[0].split("?")[0]).suffix.lower()
     return ext if ext in _ALLOWED_EXTS else ".jpg"
 
 
@@ -88,7 +91,7 @@ class IngestEngine:
     def ingest_record(self, record: SourceRecord) -> IngestOutcome:
         # 1. Licence gate — a record with no accepted licence never lands.
         canon = normalise_licence(record.licence)
-        existing = self.store.get_by_remote_url(record.remote_url)
+        existing = self._existing(record)
         if existing and existing.status in {"complete", "duplicate", "quarantined"}:
             return IngestOutcome(status="skipped", photo_id=existing.id, reason=existing.status)
 
@@ -105,23 +108,32 @@ class IngestEngine:
         photo_id = existing.id if existing else self._insert_pending(record, subject_id, canon or record.licence)
         self.store.set_status(photo_id, "downloading")
 
-        tmp = (
-            self.config.cache_dir
-            / f"{record.source}-{hashlib.sha1(record.remote_url.encode()).hexdigest()}{_ext_for(record.remote_url)}"
-        )
-        try:
-            self.net.download(record.remote_url, tmp, source=record.source)
-        except SizeCapExceeded:
-            self.store.set_status(photo_id, "failed")
-            return IngestOutcome(status="failed", photo_id=photo_id, reason="size_cap")
-        except Exception as exc:
-            self.store.set_status(photo_id, "failed")
-            logger.warning("download_failed", url=record.remote_url, error=str(exc))
-            return IngestOutcome(status="failed", photo_id=photo_id, reason=str(exc))
+        candidates = self._candidates(record)
+        for n, (url, rate_source) in enumerate(candidates, start=1):
+            # One temp file per candidate: a mirror must never resume another host's partial.
+            tmp = self.config.cache_dir / f"{record.source}-{hashlib.sha1(url.encode()).hexdigest()}{_ext_for(url)}"
+            try:
+                self.net.download(url, tmp, source=rate_source)
+            except SizeCapExceeded:
+                self.store.set_status(photo_id, "failed")
+                return IngestOutcome(status="failed", photo_id=photo_id, reason="size_cap")
+            except RemoteGone as exc:
+                if n < len(candidates):
+                    logger.info("remote_gone_trying_alternate", url=url, status=exc.status, next=candidates[n][0])
+                    continue
+                self.store.set_status(photo_id, "failed")
+                logger.warning("download_failed", url=url, error=str(exc))
+                return IngestOutcome(status="failed", photo_id=photo_id, reason=str(exc))
+            except Exception as exc:
+                self.store.set_status(photo_id, "failed")
+                logger.warning("download_failed", url=url, error=str(exc))
+                return IngestOutcome(status="failed", photo_id=photo_id, reason=str(exc))
+            fetched_from = url
+            break
 
         # 2. Verify + apply per-file resolution cap (re-encode/downscale as needed).
         try:
-            landed, width, height, phash = self._verify_and_cap(tmp, _ext_for(record.remote_url))
+            landed, width, height, phash = self._verify_and_cap(tmp, _ext_for(fetched_from))
         except Exception as exc:
             tmp.unlink(missing_ok=True)
             self.store.set_status(photo_id, "failed")
@@ -136,8 +148,10 @@ class IngestEngine:
         if dup is not None and dup.id != photo_id:
             landed.unlink(missing_ok=True)
             self.store.set_status(photo_id, "duplicate")
-            logger.info("dedup_skip", url=record.remote_url, sha256=sha256[:12])
-            return IngestOutcome(status="duplicate", photo_id=photo_id, reason=f"dup_of={dup.id}")
+            logger.info("dedup_skip", url=fetched_from, sha256=sha256[:12])
+            return IngestOutcome(
+                status="duplicate", photo_id=photo_id, reason=f"dup_of={dup.id}", fetched_from=fetched_from
+            )
 
         # 4. Budget: stop cleanly if this file would push the pool over the cap.
         if self._budget_would_exceed(file_size):
@@ -156,20 +170,39 @@ class IngestEngine:
         dest.parent.mkdir(parents=True, exist_ok=True)
         landed.replace(dest)
 
-        self.store.mark_complete(
-            photo_id,
-            filename=filename,
-            sha256=sha256,
-            width=width,
-            height=height,
-            file_size=file_size,
-            phash=phash,
+        # Provenance names the host that served the bytes: a mirror's URL replaces the row's.
+        row_url = existing.remote_url if existing else record.remote_url
+        landed_fields = dict(
+            filename=filename, sha256=sha256, width=width, height=height, file_size=file_size, phash=phash
         )
+        try:
+            self.store.mark_complete(
+                photo_id, **landed_fields, remote_url=fetched_from if fetched_from != row_url else None
+            )
+        except sqlite3.IntegrityError:  # another (unlanded) row already holds that mirror URL
+            logger.warning("remote_url_taken", url=fetched_from, photo_id=photo_id)
+            self.store.mark_complete(photo_id, **landed_fields)
         self._pool_bytes += file_size
-        logger.info("landed", url=record.remote_url, filename=filename, size=file_size)
-        return IngestOutcome(status="complete", photo_id=photo_id, filename=filename, file_size=file_size)
+        logger.info("landed", url=fetched_from, filename=filename, size=file_size)
+        return IngestOutcome(
+            status="complete", photo_id=photo_id, filename=filename, file_size=file_size, fetched_from=fetched_from
+        )
 
     # ── helpers ─────────────────────────────────────────────────────
+    def _existing(self, record: SourceRecord) -> Photograph | None:
+        """The row for this record, found under its own URL or any mirror's it landed from."""
+        for url in (record.remote_url, *(a.remote_url for a in record.alternates)):
+            if (row := self.store.get_by_remote_url(url)) is not None:
+                return row
+        return None
+
+    @staticmethod
+    def _candidates(record: SourceRecord) -> list[tuple[str, str]]:
+        """``(url, rate_source)`` in the order to try them."""
+        primary = [(record.remote_url, record.source)]
+        mirrors = [(a.remote_url, a.rate_source) for a in record.alternates]
+        return mirrors + primary if record.prefer_alternates else primary + mirrors
+
     def _upsert_subject(self, record: SourceRecord) -> int:
         return self.store.upsert_subject(
             Subject(

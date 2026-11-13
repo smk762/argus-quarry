@@ -194,6 +194,11 @@ class SliceSpec(BaseModel):
     category: str = DEFAULT_CATEGORY
     subject: str
     limit: int = Field(100, ge=1, le=SLICE_MAX)
+    prefer_mirror: bool = Field(
+        False,
+        description="Megalith: fetch from the Drawthings mirror first and Flickr only if the mirror lacks it "
+        "(kinder to Flickr for bulk pulls); ignored by archives without a mirror",
+    )
 
     @field_validator("category")
     @classmethod
