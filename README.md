@@ -293,9 +293,9 @@ dataset's licence filter as its licence label.
 
 ```bash
 # 1. archive the metadata (~45 GB incl. PD12M's CLIP embeddings; resumable; no photos)
-HF_TOKEN=hf_... uv run scripts/fetch_public_domain_metadata.py --root /media/photos/public_domain
+HF_TOKEN=hf_... uv run scripts/fetch_public_domain_metadata.py --root <ARCHIVE_ROOT>
 # 2. point quarry at it and build the search index (DuckDB, under $QUARRY_HOME/cache/archives/)
-export QUARRY_PD12M_DIR=/media/photos/public_domain/pd12m QUARRY_MEGALITH_DIR=/media/photos/public_domain/megalith
+export QUARRY_PD12M_DIR=<ARCHIVE_ROOT>/pd12m QUARRY_MEGALITH_DIR=<ARCHIVE_ROOT>/megalith
 pip install "argus-quarry[cli,archives]"
 argus-quarry archives index
 argus-quarry archives search pd12m --q "harbour boats" --min-short-side 1024
