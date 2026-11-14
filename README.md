@@ -1,4 +1,9 @@
-# Argus Quarry
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/quarry/argus-quarry-lockup-dark.svg">
+    <img alt="Argus Quarry" src="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/quarry/argus-quarry-lockup-light.svg" height="52">
+  </picture>
+</h1>
 
 [![PyPI](https://img.shields.io/pypi/v/argus-quarry)](https://pypi.org/project/argus-quarry/)
 [![Python](https://img.shields.io/pypi/pyversions/argus-quarry)](https://pypi.org/project/argus-quarry/)
