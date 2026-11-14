@@ -4,6 +4,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-14
+
 ### Added
 
 - **Megalith mirror fallback** ([#16](https://github.com/smk762/argus-quarry/issues/16)). A Megalith photo that Flickr reports gone (404 / 410 / 403) now lands from the [Drawthings mirror](https://huggingface.co/datasets/drawthingsai/megalith-10m) with a single byte-range read of its tar shard.
@@ -103,6 +105,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 First release: provenance-first acquisition of public-domain / CC0 portraits from Wikimedia Commons into a SQLite-tracked raw pool, with export to a curator-ready tree.
 
+[Unreleased]: https://github.com/smk762/argus-quarry/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/smk762/argus-quarry/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/smk762/argus-quarry/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/smk762/argus-quarry/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/smk762/argus-quarry/compare/v0.2.2...v0.2.3
