@@ -4,6 +4,10 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- README: the example host paths are placeholders now (`<ARCHIVE_ROOT>`)
+
 ### Changed
 
 - Release PRs into `main` now fail CI unless `CHANGELOG.md` has a dated, non-empty section newer than the latest tag, with `[Unreleased]` emptied and the compare link added (`scripts/check_changelog.py --release-pr`). A `v*` tag also checks for its section before anything publishes, so a missing section can no longer ship PyPI and the image without a GitHub Release, as v0.4.0 did.
