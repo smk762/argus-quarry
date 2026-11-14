@@ -319,18 +319,28 @@ def test_deleted_flickr_photo_lands_from_the_mirror(mirror_env, images):
 
     gone = rows["9001"]
     assert gone.status == "complete"
-    assert gone.remote_url.startswith(shard_url(REV, "00000") + "#bytes=")  # provenance names the mirror host
+    assert gone.remote_url == _flickr("9001")  # full-res primary kept: it is the resume key
+    assert gone.fetched_from.startswith(shard_url(REV, "00000") + "#bytes=")  # provenance names the mirror host
     assert gone.source_url == "https://www.flickr.com/photos/111@N01/9001"  # original page kept
     landed = cfg.images_dir / "setting" / "streets" / gone.filename
     assert landed.read_bytes() == images["9001"]
     assert rows["9002"].remote_url == _flickr("9002")  # alive on Flickr: no mirror involved
-    assert rows["9003"].remote_url.startswith(shard_url(REV, "00001"))
+    assert rows["9002"].fetched_from is None
+    assert rows["9003"].remote_url == _flickr("9003")
+    assert rows["9003"].fetched_from.startswith(shard_url(REV, "00001"))
     assert rows["9004"].status == "failed"
 
-    # A rerun finds the mirrored rows under their mirror URL: nothing is fetched again.
+    # A rerun finds the mirrored rows under their Flickr URL: nothing is fetched again.
     hub.requests.clear()
     summary, _ = _land(cfg, hub, spec)
     assert summary.skipped == 3 and hub.hits(CDN) == 0
+
+    # Resume doesn't depend on the mirror index: without it, the landed rows still match.
+    MegalithMirror(cfg).db_path.unlink()
+    hub.requests.clear()
+    summary, rows = _land(cfg, hub, spec)
+    assert summary.skipped == 3 and hub.hits(CDN) == 0
+    assert len(rows) == 4  # no extra pending rows
 
 
 def test_prefer_mirror_skips_flickr(mirror_env, images):
@@ -343,8 +353,9 @@ def test_prefer_mirror_skips_flickr(mirror_env, images):
 
     summary, rows = _land(cfg, hub, spec)
     assert summary.complete == 4
-    assert all(rows[p].remote_url.startswith("https://huggingface.co/") for p in ("9001", "9002", "9003"))
-    assert rows["9004"].remote_url == _flickr("9004")  # not mirrored: Flickr is the only copy
+    assert all(rows[p].fetched_from.startswith("https://huggingface.co/") for p in ("9001", "9002", "9003"))
+    assert all(rows[p].remote_url == _flickr(p) for p in images)  # full-res primary always kept
+    assert rows["9004"].fetched_from is None  # not mirrored: Flickr is the only copy
     flickr_hits = {url for _m, url, _r in hub.requests if "staticflickr" in url}
     assert flickr_hits == {_flickr("9004")}
 

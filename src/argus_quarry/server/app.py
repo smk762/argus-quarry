@@ -104,6 +104,7 @@ _PHOTO_FIELDS = (
     "filename",
     "sha256",
     "remote_url",
+    "fetched_from",
     "status",
     "downloaded_at",
 )

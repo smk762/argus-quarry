@@ -130,8 +130,9 @@ class Alternate(BaseModel):
     """Another place the same image's bytes can be fetched from (a mirror).
 
     Ingest falls back to an alternate when the primary ``remote_url`` reports the
-    bytes gone (``403``/``404``/``410``), and records whichever URL actually
-    served them as the photograph's ``remote_url``, so provenance names the host.
+    bytes gone (``403``/``404``/``410``). The photograph keeps the primary as its
+    ``remote_url`` (full-res, the resume key) and records the mirror that served
+    the bytes as ``fetched_from``, so provenance names the host.
     ``remote_url`` may carry a ``#bytes=START-END`` fragment (one member of a tar).
     """
 
@@ -210,6 +211,8 @@ class Photograph(BaseModel):
     phash: str | None = None
 
     remote_url: str
+    #: The mirror URL that served the bytes when the primary ``remote_url`` didn't (else ``None``).
+    fetched_from: str | None = None
     status: str = "pending"
     downloaded_at: str | None = None
 

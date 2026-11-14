@@ -190,7 +190,7 @@ Two tables. Provenance-first; no CV columns.
 **photographs**
 `id · subject_id (fk) · category · title · photographer · year · source · source_url ·
 licence · attribution · width · height · file_size · filename · sha256 (unique) ·
-phash (nullable, informational) · remote_url · status · downloaded_at`
+phash (nullable, informational) · remote_url · fetched_from (nullable) · status · downloaded_at`
 
 - `sha256` is `UNIQUE` → exact-dup ingest is a no-op (idempotent reruns).
 - `status` tracks resumability: `pending | downloading | complete | failed`, plus
@@ -350,7 +350,9 @@ Next.js frontend, so:
   built return 404/410/403. `archives mirror-index` records where each image sits
   in the Drawthings mirror's tar shards, and ingest falls back to a byte-range read
   of that member. The fallback is source-independent (`SourceRecord.alternates`),
-  and the recorded `remote_url` names the host the bytes came from.
+  and `fetched_from` names the mirror that served the bytes. `remote_url` is never
+  rewritten: it stays the full-resolution primary and the resume key, so resume
+  doesn't depend on the mirror index or its pinned revision.
 - **Semantic archive search (2026-11, #15):** PD12M's published CLIP ViT-L/14
   embeddings get a vector index next to the DuckDB one (`archives/semantic.py`):
   FAISS IVF-PQ for candidates, plus a local float16 copy for exact rescoring,

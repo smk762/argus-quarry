@@ -156,12 +156,13 @@ A single SQLite database (`portraits.sqlite`, WAL mode) with two tables:
   (the identity-only columns stay `NULL` for wardrobe / setting / concept subjects)
 - **`photographs`** — `category · title · photographer · year · source · source_url ·
   licence · attribution · width · height · file_size · filename ·
-  **sha256 (UNIQUE)** · phash · remote_url · status · downloaded_at`
+  **sha256 (UNIQUE)** · phash · remote_url · fetched_from · status · downloaded_at`
 
-`remote_url` is the URL the bytes actually came from. That is usually the
-source's own, but a mirror's when the source no longer had them; a
-`#bytes=START-END` fragment marks a range within a larger file (see
-[Megalith mirror](#megalith-mirror)). `sha256` is the exact-dedup key (idempotent reruns); `status`
+`remote_url` is the source's own full-resolution URL, always kept so a file can
+be re-fetched at original size; it is also the resume key. `fetched_from` is set
+only when a mirror served the bytes because the source no longer had them, and
+names that mirror; a `#bytes=START-END` fragment marks a range within a larger
+file (see [Megalith mirror](#megalith-mirror)). `sha256` is the exact-dedup key (idempotent reruns); `status`
 (`pending → downloading → complete`, plus `duplicate` / `quarantined` / `failed`)
 tracks resumability. `phash` is recorded opportunistically and is *informational
 only* — it never drives dedup here (that's [argus-curator](https://github.com/smk762/argus-curator)'s job).
@@ -395,8 +396,8 @@ gone (403 / 404 / 410), fetches the mirror copy instead. Other failures (timeout
 5xx) don't fall back. Set `"prefer_mirror": true` on a slice to fetch from the
 mirror first and touch Flickr only for photos the mirror lacks, which is kinder to
 Flickr for bulk pulls. The licence gate and SHA256 dedup apply as usual. A
-photograph that came from the mirror records the pinned shard URL plus the byte
-range as its `remote_url`
+photograph that came from the mirror keeps the Flickr image as its `remote_url` and
+records the pinned shard URL plus the byte range as its `fetched_from`
 (`https://huggingface.co/datasets/drawthingsai/megalith-10m/resolve/<rev>/00042.tar#bytes=START-END`),
 and keeps the Flickr page as its `source_url`. The fragment is never sent to the
 server; quarry turns it back into a `Range` request, so the recorded URL alone

@@ -11,7 +11,6 @@ an O(1) running byte counter seeded once from the DB. Files land under
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -91,7 +90,7 @@ class IngestEngine:
     def ingest_record(self, record: SourceRecord) -> IngestOutcome:
         # 1. Licence gate — a record with no accepted licence never lands.
         canon = normalise_licence(record.licence)
-        existing = self._existing(record)
+        existing = self.store.get_by_remote_url(record.remote_url)
         if existing and existing.status in {"complete", "duplicate", "quarantined"}:
             return IngestOutcome(status="skipped", photo_id=existing.id, reason=existing.status)
 
@@ -170,18 +169,17 @@ class IngestEngine:
         dest.parent.mkdir(parents=True, exist_ok=True)
         landed.replace(dest)
 
-        # Provenance names the host that served the bytes: a mirror's URL replaces the row's.
-        row_url = existing.remote_url if existing else record.remote_url
-        landed_fields = dict(
-            filename=filename, sha256=sha256, width=width, height=height, file_size=file_size, phash=phash
+        # Provenance names the host that served the bytes; remote_url stays the full-res primary.
+        self.store.mark_complete(
+            photo_id,
+            filename=filename,
+            sha256=sha256,
+            width=width,
+            height=height,
+            file_size=file_size,
+            phash=phash,
+            fetched_from=fetched_from if fetched_from != record.remote_url else None,
         )
-        try:
-            self.store.mark_complete(
-                photo_id, **landed_fields, remote_url=fetched_from if fetched_from != row_url else None
-            )
-        except sqlite3.IntegrityError:  # another (unlanded) row already holds that mirror URL
-            logger.warning("remote_url_taken", url=fetched_from, photo_id=photo_id)
-            self.store.mark_complete(photo_id, **landed_fields)
         self._pool_bytes += file_size
         logger.info("landed", url=fetched_from, filename=filename, size=file_size)
         return IngestOutcome(
@@ -189,13 +187,6 @@ class IngestEngine:
         )
 
     # ── helpers ─────────────────────────────────────────────────────
-    def _existing(self, record: SourceRecord) -> Photograph | None:
-        """The row for this record, found under its own URL or any mirror's it landed from."""
-        for url in (record.remote_url, *(a.remote_url for a in record.alternates)):
-            if (row := self.store.get_by_remote_url(url)) is not None:
-                return row
-        return None
-
     @staticmethod
     def _candidates(record: SourceRecord) -> list[tuple[str, str]]:
         """``(url, rate_source)`` in the order to try them."""
