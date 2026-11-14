@@ -18,6 +18,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      # Fail before anything publishes if the GitHub Release would have no notes;
+      # otherwise PyPI and the image ship and only the Release step fails.
+      - run: uv run scripts/check_changelog.py --tag "${GITHUB_REF_NAME}"
       - run: uv build
       - uses: actions/upload-artifact@v4
         with:
