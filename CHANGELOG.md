@@ -2,6 +2,27 @@
 
 All notable changes to argus-quarry are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Versions come from git tags (`hatch-vcs`). A `v*` tag publishes the PyPI package and `ghcr.io/smk762/argus-quarry`.
 
+## [Unreleased]
+
+### Added
+
+- **Megalith mirror fallback** ([#16](https://github.com/smk762/argus-quarry/issues/16)). A Megalith photo that Flickr reports gone (404 / 410 / 403) now lands from the [Drawthings mirror](https://huggingface.co/datasets/drawthingsai/megalith-10m) with a single byte-range read of its tar shard.
+  - `argus-quarry archives mirror-index` builds the member-offset index (`--shards`, `--workers`, `--rps`). It reads about one 8 KB range per image, saves each shard's offsets when that shard is done (so it resumes), and pins them to the archived dataset revision. `archives status` shows progress.
+  - Provenance names the host: a mirrored photograph records the pinned shard URL plus `#bytes=START-END` in a new nullable `photographs.fetched_from` column (added in place on existing pools). Its `remote_url` stays the full-resolution Flickr image and its `source_url` the Flickr page.
+  - A slice's `prefer_mirror: true` fetches from the mirror first and from Flickr only for photos the mirror lacks.
+  - The fallback is source-independent: `SourceRecord.alternates` and `prefer_alternates`, decided in ingest. The fetch route's `item` frames carry `fetched_from`.
+- Semantic search over PD12M's CLIP ViT-L/14 embeddings ([#15](https://github.com/smk762/argus-quarry/issues/15)). `GET /archives/pd12m/search` (and `archives search`) takes `semantic=<text>` to rank by meaning or `similar_to=<id>` for "more like this" (and near-duplicates), combined with the existing filters. Each item gets a `score`, and slices keep the ranking. `archives index pd12m --embeddings` (or `--embeddings-only`) builds the vector index: memory-bounded, 1.3 GB of FAISS IVF-PQ plus a 19 GB float16 copy under `$QUARRY_HOME/cache/archives/`. New extras: `[embeddings]` (faiss, numpy) for the build and `similar_to`, `[search]` (adds transformers and torch) for text queries. `GET /archives` reports each archive's `semantic` status. The published image adds `[embeddings]`. Text queries in a container need `--build-arg EXTRAS=cli,phash,server,archives,search`.
+- A `v*` tag now also creates the GitHub Release, after the PyPI publish succeeds. Its notes are that version's section of this file (a missing section fails the job), it carries the built wheel and sdist, a re-run updates it in place, and `-` / `rc` / `a<n>` / `b<n>` tags are marked pre-release ([#21](https://github.com/smk762/argus-quarry/issues/21)).
+
+### Changed
+
+- A download that gets 403 / 404 / 410 now fails at once with `RemoteGone` instead of being retried with backoff.
+- The archive index schema is now 4, which adds `pos`, an item's row in the published embeddings. Existing indexes report `stale` until `archives index` rebuilds them (about 30 s for PD12M).
+
+### Fixed
+
+- Commons honours `--limit` past 50 candidates per subject ([#14](https://github.com/smk762/argus-quarry/issues/14)). The search used to make one request capped at 50 hits; it now follows the API's `continue` token, 50 hits per request, until it has `--limit` images or the results run out. A subject's seed `aliases` (e.g. `Samuel Clemens` for Mark Twain) are now searched too, after the primary name, while the subject is still short of `--limit`. A file found by more than one search counts once.
+
 ## [0.3.1] - 2026-10-24
 
 ### Fixed

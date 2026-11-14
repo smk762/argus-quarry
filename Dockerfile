@@ -25,7 +25,9 @@ COPY . /app
 
 # Extras to install. "server" is in the default set so the published image can
 # run the read-only provenance API behind argus-studio's /gallery page.
-ARG EXTRAS=cli,phash,server,archives
+# "embeddings" (faiss + numpy) serves PD12M's similar_to; text queries (semantic=)
+# need torch too: build with --build-arg EXTRAS=cli,phash,server,archives,search.
+ARG EXTRAS=cli,phash,server,archives,embeddings
 
 # Hash-pinned wheel so the base image's pip cannot swap the upgrade in transit.
 RUN --mount=type=cache,target=/root/.cache/pip \

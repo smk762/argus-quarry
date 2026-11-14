@@ -16,11 +16,17 @@ that filter as its licence label rather than inventing a per-photo one.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from argus_quarry.archives.base import Archive, sql_path
-from argus_quarry.models import SourceRecord
+import structlog
+
+from argus_quarry.archives.base import Archive, ArchiveUnavailable, SliceSpec, sql_path
+from argus_quarry.archives.mirror import RATE_SOURCE, MegalithMirror
+from argus_quarry.models import Alternate, SourceRecord
+
+logger = structlog.get_logger()
 
 DATASET_URL = "https://huggingface.co/datasets/madebyollin/megalith-10m"
 LICENCE = "public domain or equivalent (Megalith-10m filter: Flickr PDM / CC-zero / Flickr Commons / US Gov)"
@@ -84,7 +90,8 @@ class MegalithArchive(Archive):
                 d.height AS height,
                 'public domain or equivalent' AS licence,
                 regexp_extract(l.url_source, '/photos/([^/]+)/', 1) AS collection,
-                'image/jpeg' AS mime
+                'image/jpeg' AS mime,
+                CAST(NULL AS BIGINT) AS pos
             FROM read_parquet({links}) l
             LEFT JOIN caps c ON c.url_source = l.url_source
             LEFT JOIN sizes d ON d.url_highres = l.url_highres
@@ -102,3 +109,25 @@ class MegalithArchive(Archive):
             licence=LICENCE,
             attribution=f"Flickr user {item['collection']} via Megalith-10m ({DATASET_URL})",
         )
+
+    def records(self, spec: SliceSpec) -> Iterator[SourceRecord]:
+        """The slice's records, each with its Drawthings mirror copy as an alternate.
+
+        Ingest falls back to the mirror when Flickr reports a photo gone (403/404/410),
+        or tries it first when the slice sets ``prefer_mirror``. Items the mirror lacks,
+        or every item before ``archives mirror-index`` has run, are Flickr-only.
+        """
+        records = list(super().records(spec))
+        try:
+            mirrors = MegalithMirror(self.config).lookup(r.remote_url for r in records)
+        except ArchiveUnavailable as exc:  # a broken mirror index must not block Flickr fetches
+            logger.warning("mirror_lookup_failed", error=str(exc))
+            mirrors = {}
+        if spec.prefer_mirror and records and not mirrors:
+            logger.info("mirror_unavailable", hint="run `argus-quarry archives mirror-index`")
+        for record in records:
+            mirror = mirrors.get(record.remote_url)
+            if mirror is not None:
+                record.alternates = [Alternate(remote_url=mirror, rate_source=RATE_SOURCE)]
+                record.prefer_alternates = spec.prefer_mirror
+            yield record

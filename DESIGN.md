@@ -1,6 +1,10 @@
 # argus-quarry — Design Doc (Draft)
 
-> Status: **proposal / plan only** — no code yet.
+> Status: **implemented** (released through v0.3.x): CLI, ingest, provenance store,
+> read-only server and the public-domain archives. Still pending: the Phase 2/3
+> downloaders (LoC, Smithsonian, Rijksmuseum, LAC, Europeana, Flickr Commons) and
+> the Wikidata SPARQL subject harvester. The rest of this doc keeps its original
+> design rationale; where the build diverged, the section says so.
 > Owner: smk762 · Suite: Argus · Sibling of `argus-lens`, `argus-curator`, `argus-studio`.
 
 The *quarry* is where the suite digs up raw material. `argus-quarry` acquires
@@ -91,7 +95,7 @@ argus-quarry/
 │   ├── net.py                # httpx client: rate limit, retry/backoff, resume
 │   ├── config.py             # QuarryConfig: per-source settings, resolution + total-GB caps
 │   ├── subjects.py           # load per-category seed lists; optional Wikidata SPARQL harvester
-│   ├── cli.py                # typer app: run / fetch / export / list / stats / verify / subjects
+│   ├── cli.py                # typer app: run / fetch / export / list / stats / verify / subjects / serve / archives
 │   ├── seeds/
 │   │   ├── identity.yaml     # curated persons seed (name, wikidata_id, aliases)
 │   │   ├── wardrobe.yaml     # garments / outfits
@@ -107,6 +111,7 @@ argus-quarry/
 │   │   ├── lac.py            # Library & Archives Canada  (Phase 2, Karsh)
 │   │   ├── europeana.py      # Europeana                  (Phase 3, rights-messy)
 │   │   └── flickr.py         # Flickr Commons (optional)  (Phase 3)
+│   ├── archives/             # PD12M / Megalith-10m metadata search (DuckDB index; semantic.py: CLIP vectors), Megalith mirror offsets — see §9
 │   └── server/               # read-only provenance API (`serve`, :8102) — see §9
 └── tests/
 ```
@@ -161,7 +166,9 @@ two interchangeable sources:
 
 - **Curated seeds (default, deterministic):** `seeds/<category>.yaml` — small,
   hand-maintained lists (`name`, optional `search`, `aliases`; plus
-  `wikidata_id` / birth / death for `identity`). This is what dev/QA runs against
+  `wikidata_id` / birth / death for `identity`). A downloader searches
+  `Subject.queries`: `search` (else `name`), then each alias, paging each one
+  until `--limit` candidates per subject are found. This is what dev/QA runs against
   so results are reproducible and licence-safe. `load_subjects()` merges all
   categories; `--category` restricts to one.
 - **Wikidata SPARQL harvester (optional, `--from-wikidata`, identity only):**
@@ -185,10 +192,12 @@ Two tables. Provenance-first; no CV columns.
 **photographs**
 `id · subject_id (fk) · category · title · photographer · year · source · source_url ·
 licence · attribution · width · height · file_size · filename · sha256 (unique) ·
-phash (nullable, informational) · remote_url · status · downloaded_at`
+phash (nullable, informational) · remote_url · fetched_from (nullable) · status · downloaded_at`
 
 - `sha256` is `UNIQUE` → exact-dup ingest is a no-op (idempotent reruns).
-- `status` tracks resumability: `pending | downloading | complete | failed`.
+- `status` tracks resumability: `pending | downloading | complete | failed`, plus
+  the terminal `duplicate` (identical bytes already landed) and `quarantined`
+  (no accepted licence) states.
 - `phash` recorded opportunistically (cheap with Pillow+ImageHash) but **never**
   drives dedup here — that's curator's job.
 - SQLite in WAL mode; single writer, safe concurrent readers.
@@ -249,9 +258,12 @@ Each source module must:
 - **Record licence + attribution** — a record with no licence is quarantined,
   not landed.
 - **Prefer high resolution within a configurable cap** (Q3): request the largest
-  rendition the API offers, but downscale/skip past a per-file ceiling
-  (`QuarryConfig.max_megapixels` default ~12 MP, `max_file_bytes` default a few
-  MB), overridable per run. The **full-resolution `remote_url` is always kept in
+  rendition the API offers, but downscale past a per-file ceiling
+  (`QuarryConfig.max_megapixels`, default 12 MP, env `QUARRY_MAX_MEGAPIXELS`).
+  *As built, only the megapixel cap is enforced*: `max_file_bytes` exists in
+  `QuarryConfig` but ingest does not pass it to the downloader, since a byte cap
+  on the download would reject large originals that the megapixel cap can
+  downscale instead. The **full-resolution `remote_url` is always kept in
   the DB**, so a capped image can be re-fetched at original size on demand
   without losing provenance. Keeps the archive inside the 20–40 GB budget by
   default while never throwing away the ability to go bigger.
@@ -336,6 +348,26 @@ Next.js frontend, so:
   `QUARRY_ALLOW_FETCH=1`; when off, the UI downloads the slice JSON and the
   operator runs `argus-quarry archives fetch slice.json`. The provenance routes
   below remain strictly read-only.
+- **Megalith mirror (2026-11, #16):** Flickr photos deleted since Megalith was
+  built return 404/410/403. `archives mirror-index` records where each image sits
+  in the Drawthings mirror's tar shards, and ingest falls back to a byte-range read
+  of that member. The fallback is source-independent (`SourceRecord.alternates`),
+  and `fetched_from` names the mirror that served the bytes. `remote_url` is never
+  rewritten: it stays the full-resolution primary and the resume key, so resume
+  doesn't depend on the mirror index or its pinned revision.
+- **Semantic archive search (2026-11, #15):** PD12M's published CLIP ViT-L/14
+  embeddings get a vector index next to the DuckDB one (`archives/semantic.py`):
+  FAISS IVF-PQ for candidates, plus a local float16 copy for exact rescoring,
+  because the archived `.npy` files sit on a NAS where a random row costs ~40 ms.
+  `items.pos` maps a hit back to its item. It is the row in the metadata files
+  concatenated in sorted-filename order, which matches the embeddings: on 88
+  sampled rows, caption↔image cosine was 0.27 aligned against 0.09 one row off.
+  Filters run inside the vector search as a FAISS bitmap selector, so ranking
+  never post-filters a page empty. The text tower is an optional, lazy extra
+  (`[search]`) so the default install stays torch-free. No sibling serves CLIP
+  text embeddings, and quarry does not depend on cortex. This is ranking only:
+  it records nothing and never drives dedup (that is still `sha256`, and
+  near-dup selection is curator's).
 
 Strictly read-only means the *store*, not just the routes. The server opens the
 pool via `ProvenanceStore.open_readable()`, which never mkdirs, never migrates
@@ -414,7 +446,7 @@ CV/search/curation stages rather than duplicating them.
    (identity / wardrobe / setting / concept) for deterministic dev/QA (Phase 1),
    plus an optional Wikidata SPARQL harvester (identity) to scale toward 5–7k
    (Phase 2). See §4. ✅
-3. **Resolution** — **configurable per-file cap** (~12 MP / few MB default),
+3. **Resolution** — **configurable per-file cap** (12 MP default; megapixels only, see §7),
    full-res `remote_url` retained for on-demand re-fetch; overridable per run.
    Keeps the 20–40 GB budget without discarding fidelity. See §7. ✅
 4. **`QUARRY_HOME`** — sibling **`./quarry`** dir, fully outside the image tree.

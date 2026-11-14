@@ -13,12 +13,22 @@ argus-quarry -> argus-curator -> argus-lens -> argus-forge -> your trainer -> ar
 
 Deliberately lean: **acquisition + provenance only**. Quality scoring, near-dup, faces and captioning are owned downstream (curator/lens) — do not rebuild them here.
 
+## Argus suite
+<!-- argus-suite: keep this block; argus-ci checks for it -->
+This repo is part of the Argus suite. The suite map below lists every sibling and what it owns; check it before
+building something a sibling may already do. **On every release, update this repo's row and capabilities in
+argus-cortex's SUITE.md** (a PR to argus-cortex in the same release).
+
+@../argus-core/SUITE.md
+
+Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
+
 ## Layout
 
 `src/argus_quarry/`:
 
 - `models.py` — Pydantic v2 data contract. `Subject` (a thing to harvest) and `SourceRecord` (the source-independent record every downloader yields), plus the licence/category/slug helpers (`normalise_licence`, `is_accepted_licence`, `normalise_category`, `slugify_name`). `Photograph` mirrors the DB row.
-- `config.py` — `QuarryConfig`; all paths derive from `home` (`$QUARRY_HOME`, default `./quarry`). `from_env()` is what the CLI/compose use. Caps: megapixel, per-file bytes, total-pool budget.
+- `config.py` — `QuarryConfig`; all paths derive from `home` (`$QUARRY_HOME`, default `./quarry`). `from_env()` is what the CLI/compose use. Caps: megapixel (downscale on landing) and total-pool budget; `max_file_bytes` is reserved and not enforced.
 - `store.py` — SQLite provenance DB (`subjects` + `photographs`, WAL). Owns migrations, the `sha256 UNIQUE` dedup key, and the read-only open logic (`open_readable`, `ProvenanceUnavailable`).
 - `net.py` — `NetClient`: polite `httpx` with per-source token-bucket rate limits, backoff, and resumable (`Range`) streaming downloads.
 - `downloaders/` — one module per archive over `base.Downloader`, registered in `downloaders/__init__.py` (`commons` is the only Phase-1 source). Add a source here.
@@ -26,7 +36,7 @@ Deliberately lean: **acquisition + provenance only**. Quality scoring, near-dup,
 - `ingest.py` — the per-record pipeline: licence-gate → resume-check → download → verify → cap → SHA256 dedup → land → record. Owns the running byte-budget counter.
 - `export.py` — publish a filtered `<category>/<subject>/` tree into `$DATASET_DIR` (symlink by default, `--copy` optional).
 - `cli.py` — Typer app (`run`, `fetch`, `export`, `list`, `stats`, `verify`, `subjects`, `serve`).
-- `archives/` — searchable local **metadata archives** of large public-domain datasets (`pd12m.py`, `megalith.py` over `base.Archive`; registry in `__init__.py`). `QUARRY_<NAME>_DIR` points at the archived files; `archives index` builds one DuckDB `items` table per archive under `$QUARRY_HOME/cache/archives/` (optional `[archives]` extra). A `SliceSpec` (query + category/subject + limit) becomes a `SourceRecord` stream via `Archive.records()`, so slices land through normal ingest.
+- `archives/` — searchable local **metadata archives** of large public-domain datasets (`pd12m.py`, `megalith.py` over `base.Archive`; registry in `__init__.py`). `QUARRY_<NAME>_DIR` points at the archived files; `archives index` builds one DuckDB `items` table per archive under `$QUARRY_HOME/cache/archives/` (optional `[archives]` extra). A `SliceSpec` (query + category/subject + limit) becomes a `SourceRecord` stream via `Archive.records()`, so slices land through normal ingest. `semantic.py` adds PD12M's CLIP-embedding search (`semantic` / `similar_to` on `ArchiveQuery`): a FAISS IVF-PQ index + float16 copy built by `archives index --embeddings` (`[embeddings]` extra; text queries need `[search]`, i.e. torch). Hits map back by `items.pos`, the embedding row; keep that column's derivation (sorted-filename concatenation) in step with the embedding file order. `mirror.py` indexes tar-member offsets in Megalith's Drawthings mirror (`archives mirror-index`); Megalith records carry the mirror copy as an `Alternate`.
 - `server/` — FastAPI provenance API on **:8102** (optional `[server]` extra): read-only, plus the `/archives` search routes and one opt-in write (`POST /archives/{name}/fetch`).
 - `scripts/fetch_public_domain_metadata.py` — operator script (PEP 723, `uv run`) that archives PD12M / Megalith metadata from Hugging Face into `<root>/<source>/<part>/` with a `SOURCE.json` of pinned revisions. No photos.
 
@@ -51,6 +61,11 @@ Run one test: `uv run --no-sync pytest tests/test_ingest.py::test_name -q`.
 - **Archives never write outside `$QUARRY_HOME`.** The archive dirs are treated as read-only (mount them `:ro`); the index is rebuilt atomically (temp file, then `os.replace`) so a server reading it never sees a half-written file. Megalith has no per-photo licence, so its records state the dataset filter as the licence label; keep that label free of the substring `cc0`, or `normalise_licence` would record Megalith items as CC0 rather than PD.
 - **`$QUARRY_HOME` owns the whole raw pool** (`images/`, `metadata/`, `cache/`, `logs/`) as side-car dirs the curator never scans. `export` publishes a *separate* clean tree into `$DATASET_DIR` — keep the two separate. Files land under `images/<category>/<subject>/`.
 - **Categories mirror the suite taxonomy** (curator `TargetCategory`): identity / wardrobe / setting / concept. Categories are normalised but not hard-validated so downstream can extend them.
+- **Mirrors are alternates, decided in ingest.** A `SourceRecord.alternates` entry is tried only when the primary reports the bytes gone (`RemoteGone`: 403/404/410), or first when `prefer_alternates` is set. Other failures don't fall back. The row's `remote_url` is never rewritten (it stays the full-res primary and the resume key); a mirror that served the bytes is recorded in `fetched_from`, so provenance names the host. A `#bytes=START-END` fragment on a URL is a byte range `NetClient.download` honours; it must get a `206` for exactly that span and refuses a `200`, which would stream a whole ~1.9 GB shard.
 - **Full-res `remote_url` is always retained** even when the megapixel/byte caps downscale a landed file, so it can be re-fetched at original size. The total-pool budget (`$QUARRY_MAX_GB`) stops a run *cleanly* and resumably (`BudgetReached`).
 - **Backward-compat surface is intentional.** Pre-0.2 was person/portrait-only: keep the `Person`/`PortraitRecord` aliases, the hidden `people` command, and `load_people` importable. `store._migrate` upgrades legacy pools (people→subjects, flat→category layout) in place — preserve that.
 - **Versioning is git-tag-derived** (`hatch-vcs`); `src/argus_quarry/_version.py` is generated (gitignored). Never hand-edit a version; tag `vX.Y.Z` to release (PyPI via OIDC + GHCR image). Ruff line-length 120, target py311; `structlog` for logging; Pydantic v2 everywhere.
+
+## Branches
+
+`dev` is the default branch and the base for every PR. Cut feature branches from `origin/dev` and bring them up to date by merging `origin/dev`, never `main`. Never open a PR against `main` or push work to it directly: `main` must never be ahead of `dev`. A release fast-forwards `main` to a `dev` commit that passed CI (`git push origin origin/dev:main`), then tags it. If `main` is protected and needs a PR, merge the release PR, then immediately merge `main` back into `dev` so the merge commit is not left on `main` alone.

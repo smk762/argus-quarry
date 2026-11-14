@@ -204,3 +204,18 @@ def test_open_readable_rejects_an_unmigrated_pool(config, read_only_dir):
 
     with pytest.raises(ProvenanceUnavailable):
         ProvenanceStore.open_readable(config.db_path)
+
+
+def test_migration_adds_fetched_from_to_an_existing_pool(config):
+    """Pools from before the mirror fallback gain the nullable ``fetched_from`` column in place."""
+    config.ensure_dirs()
+    with ProvenanceStore(config.db_path) as store:
+        store.insert_pending(_photo(store.upsert_subject(Subject(name="Albert Einstein")), "https://img/a.jpg"))
+        store._conn.execute("ALTER TABLE photographs DROP COLUMN fetched_from")
+        store._conn.commit()
+        assert not store._column_exists("photographs", "fetched_from")
+    # The read path never migrates, so it must still read the older shape.
+    with ProvenanceStore.open_readable(config.db_path) as reader:
+        assert [p.fetched_from for p in reader.iter_photographs(status=None)] == [None]
+    with ProvenanceStore(config.db_path) as store:
+        assert store._column_exists("photographs", "fetched_from")

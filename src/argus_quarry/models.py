@@ -122,8 +122,39 @@ class Subject(BaseModel):
 
     @property
     def query(self) -> str:
-        """The string a downloader searches the archive with."""
+        """The primary string a downloader searches the archive with."""
         return self.search or self.name
+
+    @property
+    def queries(self) -> list[str]:
+        """Every search string for this subject: :attr:`query` first, then each alias.
+
+        Blank and case-insensitively repeated strings are dropped, so a subject
+        whose alias matches its name is not searched twice.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for q in (self.query, *self.aliases):
+            q = (q or "").strip()
+            if q and q.casefold() not in seen:
+                seen.add(q.casefold())
+                out.append(q)
+        return out
+
+
+class Alternate(BaseModel):
+    """Another place the same image's bytes can be fetched from (a mirror).
+
+    Ingest falls back to an alternate when the primary ``remote_url`` reports the
+    bytes gone (``403``/``404``/``410``). The photograph keeps the primary as its
+    ``remote_url`` (full-res, the resume key) and records the mirror that served
+    the bytes as ``fetched_from``, so provenance names the host.
+    ``remote_url`` may carry a ``#bytes=START-END`` fragment (one member of a tar).
+    """
+
+    remote_url: str
+    #: Rate-limit bucket for this host (``NetClient`` paces each source separately).
+    rate_source: str
 
 
 class SourceRecord(BaseModel):
@@ -155,6 +186,10 @@ class SourceRecord(BaseModel):
     source_url: str
     licence: str
     attribution: str | None = None
+
+    # mirrors of the same bytes, tried in order when remote_url is gone (or first, when preferred)
+    alternates: list[Alternate] = Field(default_factory=list)
+    prefer_alternates: bool = False
 
     @field_validator("category")
     @classmethod
@@ -192,6 +227,8 @@ class Photograph(BaseModel):
     phash: str | None = None
 
     remote_url: str
+    #: The mirror URL that served the bytes when the primary ``remote_url`` didn't (else ``None``).
+    fetched_from: str | None = None
     status: str = "pending"
     downloaded_at: str | None = None
 

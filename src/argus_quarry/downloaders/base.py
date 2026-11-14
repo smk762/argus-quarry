@@ -31,7 +31,9 @@ class Downloader(ABC):
     def harvest(self, subject: Subject, limit: int) -> Iterator[SourceRecord]:
         """Yield up to ``limit`` candidate records for ``subject``.
 
-        Search with ``subject.query`` and stamp every record with the subject's
+        Search with ``subject.queries`` (the primary query, then any aliases),
+        following the source's pagination until ``limit`` candidates are found or
+        the results run out, and stamp every record with the subject's
         canonical folder name and category. Implementations must attach full
         provenance (source_url, licence, attribution) to every record. Records
         whose licence is not clearly free-to-use should still be yielded with
