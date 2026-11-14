@@ -254,7 +254,8 @@ class MegalithMirror:
         done = self.scanned()
         todo = [s for s in wanted if s not in done]
         failed: list[str] = []
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        pool = ThreadPoolExecutor(max_workers=max(1, workers))
+        try:
             futures = {pool.submit(self.scan_shard, net, s, revision): s for s in todo}
             for future in as_completed(futures):
                 shard = futures[future]
@@ -268,6 +269,12 @@ class MegalithMirror:
                 else:
                     if progress:
                         progress(shard, n, None)
+        except BaseException:
+            # Ctrl-C: drop the queued shards (in-flight ones finish and keep their .tsv) instead of
+            # scanning every remaining shard before the interrupt takes effect.
+            pool.shutdown(wait=True, cancel_futures=True)
+            raise
+        pool.shutdown(wait=True)
         members = self.consolidate()
         return {
             "revision": revision,

@@ -61,6 +61,7 @@ class NetClient:
     def __init__(self, config: QuarryConfig, client: httpx.Client | None = None) -> None:
         self.config = config
         self._buckets: dict[str, TokenBucket] = {}
+        self._buckets_lock = threading.Lock()  # mirror-index workers share one client
         self._client = client or httpx.Client(
             headers={"User-Agent": config.user_agent},
             timeout=httpx.Timeout(config.read_timeout, connect=config.connect_timeout),
@@ -77,10 +78,11 @@ class NetClient:
         self.close()
 
     def _bucket(self, source: str) -> TokenBucket:
-        if source not in self._buckets:
-            rate = self.config.rate_for(source)
-            self._buckets[source] = TokenBucket(rate.rate_per_sec, rate.burst)
-        return self._buckets[source]
+        with self._buckets_lock:
+            if source not in self._buckets:
+                rate = self.config.rate_for(source)
+                self._buckets[source] = TokenBucket(rate.rate_per_sec, rate.burst)
+            return self._buckets[source]
 
     def _sleep_backoff(self, attempt: int) -> None:
         delay = self.config.backoff_base * (2**attempt) + random.uniform(0, self.config.backoff_base)
@@ -134,6 +136,9 @@ class NetClient:
                 if have > last - first + 1:  # a stale .part longer than the span: start over
                     part.unlink()
                     have = 0
+                elif have == last - first + 1:  # finished before an interrupted rename: a Range would 416
+                    part.replace(dest)
+                    return DownloadResult(path=dest, size=have, resumed=True)
                 headers = {"Range": f"bytes={first + have}-{last}"}
             else:
                 headers = {"Range": f"bytes={have}-"} if have else {}
@@ -197,8 +202,14 @@ class NetClient:
                         raise RemoteGone(url, resp.status_code)
                     _check_span(resp, start, None)
                     resp.raise_for_status()
-                    data = b"".join(resp.iter_bytes(chunk_size=65536))
-                return data[:length]
+                    chunks: list[bytes] = []
+                    got = 0
+                    for chunk in resp.iter_bytes(chunk_size=65536):
+                        chunks.append(chunk)
+                        got += len(chunk)
+                        if got >= length:  # a server sending more than asked is not buffered
+                            break
+                return b"".join(chunks)[:length]
             except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 last_exc = exc
                 logger.warning("range_error", url=url, error=str(exc), attempt=attempt)
@@ -211,14 +222,26 @@ class NetClient:
         Hugging Face's ``resolve/`` URLs 302 to a signed CDN URL; resolving once per
         shard keeps thousands of range reads off the rate-limited resolver.
         """
-        self._bucket(source).take()
-        resp = self._client.head(url, follow_redirects=False)
-        if resp.status_code in GONE_STATUS:
-            raise RemoteGone(url, resp.status_code)
-        if resp.is_redirect and resp.headers.get("location"):
-            return str(resp.url.join(resp.headers["location"]))
-        resp.raise_for_status()
-        return url
+        last_exc: Exception | None = None
+        for attempt in range(self.config.max_retries):
+            self._bucket(source).take()
+            try:
+                resp = self._client.head(url, follow_redirects=False)
+                if resp.status_code in _TRANSIENT_STATUS:
+                    logger.warning("resolve_transient", url=url, status=resp.status_code, attempt=attempt)
+                    self._sleep_backoff(attempt)
+                    continue
+                if resp.status_code in GONE_STATUS:
+                    raise RemoteGone(url, resp.status_code)
+                if resp.is_redirect and resp.headers.get("location"):
+                    return str(resp.url.join(resp.headers["location"]))
+                resp.raise_for_status()
+                return url
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                last_exc = exc
+                logger.warning("resolve_error", url=url, error=str(exc), attempt=attempt)
+                self._sleep_backoff(attempt)
+        raise RuntimeError(f"resolve {url} failed after {self.config.max_retries} attempts") from last_exc
 
 
 #: Statuses that mean "these bytes are not here": deleted, gone, or private.
