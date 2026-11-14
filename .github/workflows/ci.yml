@@ -21,6 +21,19 @@ jobs:
       - run: uvx ruff@0.15.20 check src/ tests/
       - run: uvx ruff@0.15.20 format --check src/ tests/
 
+  changelog:
+    # A release PR (into main) must carry a cut, dated CHANGELOG section newer than
+    # the latest tag: the tag's GitHub Release takes its notes from it, and v0.4.0
+    # shipped without one because everything was still under [Unreleased].
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run scripts/check_changelog.py --release-pr
+
   test:
     runs-on: ubuntu-latest
     strategy:
