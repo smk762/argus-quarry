@@ -592,7 +592,7 @@ class Archive(ABC):
             vector = index.vector(exclude)
         else:
             try:
-                vector = sem.get_text_encoder(self.embedding_model).encode(query.semantic)
+                vector = sem.encode_text(self.embedding_model, query.semantic)
             except sem.SemanticUnavailable as exc:
                 raise ArchiveUnavailable(str(exc)) from exc
         hits = index.search(vector, k, allowed=allowed, exclude=exclude)

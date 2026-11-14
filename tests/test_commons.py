@@ -150,3 +150,9 @@ def test_commons_stuck_continue_token_does_not_loop(config):
 
     records = list(CommonsDownloader(config, Stuck()).harvest(Subject(name="Albert Einstein"), limit=100))
     assert len(records) == 1 and Stuck.calls == 2
+
+
+def test_commons_zero_limit_yields_nothing(config):
+    net = PagedCommons({"Albert Einstein": ["e1", "e2"]})
+    assert list(CommonsDownloader(config, net).harvest(Subject(name="Albert Einstein"), limit=0)) == []
+    assert net.calls == []

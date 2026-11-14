@@ -19,7 +19,7 @@ from PIL import Image
 
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import Photograph, SourceRecord, Subject, is_accepted_licence, normalise_licence
-from argus_quarry.net import NetClient, RemoteGone, SizeCapExceeded, split_byte_range
+from argus_quarry.net import NetClient, RemoteGone, SizeCapExceeded
 from argus_quarry.store import ProvenanceStore
 
 logger = structlog.get_logger()
@@ -45,7 +45,9 @@ class IngestOutcome:
 
 
 def _ext_for(remote_url: str) -> str:
-    ext = Path(split_byte_range(remote_url)[0].split("?")[0]).suffix.lower()
+    # Drop any #fragment (a mirror's #bytes= range) and query without parsing them: this runs
+    # outside the download's error handling, so a malformed range must fail the download, not the run.
+    ext = Path(remote_url.split("#")[0].split("?")[0]).suffix.lower()
     return ext if ext in _ALLOWED_EXTS else ".jpg"
 
 

@@ -24,6 +24,7 @@ torch). Everything else here needs only faiss + numpy (``[embeddings]``).
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
@@ -313,7 +314,7 @@ class VectorIndex:
             sel = bitmap = None
             if allowed is not None:
                 bitmap = np.packbits(allowed, bitorder="little")
-                sel = faiss.IDSelectorBitmap(self.rows, faiss.swig_ptr(bitmap))
+                sel = faiss.IDSelectorBitmap(len(bitmap), faiss.swig_ptr(bitmap))  # n is the array's size in bytes
             if self.ivf is not None:
                 nprobe = DEFAULT_NPROBE
                 if allowed is not None:  # a narrow filter leaves fewer hits per list: probe more lists
@@ -406,3 +407,15 @@ def get_text_encoder(model: str) -> TextEncoder:
             logger.info("clip_text_encoder_load", model=model)
             _encoders[model] = ClipTextEncoder(model)
         return _encoders[model]
+
+
+@functools.lru_cache(maxsize=256)
+def _encode_cached(encoder: TextEncoder, text: str):
+    vector = _np().asarray(encoder.encode(text), dtype="float32")
+    vector.setflags(write=False)  # shared between callers
+    return vector
+
+
+def encode_text(model: str, text: str):
+    """``text`` as a query vector, cached so paging through one semantic query runs the text tower once."""
+    return _encode_cached(get_text_encoder(model), text)

@@ -359,6 +359,8 @@ def _parse_shards(spec: str) -> list[str]:
             first, last = int(lo), int(hi) if sep else int(lo)
         except ValueError:
             raise typer.BadParameter(f"{part!r} is not a shard number or range like 0-99") from None
+        if last < first:
+            raise typer.BadParameter(f"{part!r} is an empty range (write it low-high)")
         out += [f"{n:05d}" for n in range(first, last + 1)]
     return out
 

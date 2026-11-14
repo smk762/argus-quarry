@@ -138,7 +138,7 @@ def scan_tar(read: Callable[[int, int], bytes], *, window: int = SCAN_WINDOW) ->
             pending["path"] = get(data, size).rstrip(b"\0").decode("utf-8", "replace")
         elif typeflag in (b"0", b"\0", b"7"):
             name = header[:100].rstrip(b"\0").decode("utf-8", "replace")
-            if header[257:262] == b"ustar" and header[345:500].strip(b"\0"):
+            if header[257:263] == b"ustar\0" and header[345:500].strip(b"\0"):  # POSIX only: GNU puts atime here
                 name = header[345:500].rstrip(b"\0").decode("utf-8", "replace") + "/" + name
             size = int(pending.get("size", size))
             yield TarMember(pending.get("path", name), data, size)
@@ -220,7 +220,7 @@ class MegalithMirror:
         rows = [
             (Path(m.name).stem, m.offset, m.size)
             for m in scan_tar(read)
-            if Path(m.name).suffix.lower() in IMAGE_SUFFIXES
+            if m.size > 0 and Path(m.name).suffix.lower() in IMAGE_SUFFIXES
         ]
         self.shards_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.shards_dir / f".{shard}.{os.getpid()}-{uuid.uuid4().hex[:8]}.part"

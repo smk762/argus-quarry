@@ -67,6 +67,8 @@ class CommonsDownloader(Downloader):
         :data:`PAGE_SIZE` hits) at a time, so ``limit`` is not capped by a single
         request. A file found by more than one search is yielded once.
         """
+        if limit <= 0:
+            return
         seen: set[str] = set()
         yielded = 0
         for query in subject.queries:
@@ -84,7 +86,7 @@ class CommonsDownloader(Downloader):
 
         Callers stop consuming once they have enough, so no further pages are requested.
         """
-        params: dict[str, object] = {
+        base: dict[str, object] = {
             "action": "query",
             "format": "json",
             "generator": "search",
@@ -97,6 +99,7 @@ class CommonsDownloader(Downloader):
                 ["LicenseShortName", "License", "UsageTerms", "Artist", "Credit", "DateTimeOriginal"]
             ),
         }
+        params = base
         seen_continue: set[tuple] = set()
         for page_no in range(MAX_PAGES):
             try:
@@ -120,7 +123,9 @@ class CommonsDownloader(Downloader):
                 logger.warning("commons_continue_stuck", subject=subject.name, query=query, token=cont)
                 return
             seen_continue.add(key)
-            params = {**params, **cont, "gsrlimit": PAGE_SIZE}
+            # Onto the original params, not the last request's: a continue key the API dropped
+            # (e.g. an iicontinue) must not be resent with the next page.
+            params = {**base, **cont, "gsrlimit": PAGE_SIZE}
         logger.info("commons_search_page_cap", subject=subject.name, query=query, pages=MAX_PAGES)
 
     def _record(self, subject: Subject, page: dict) -> SourceRecord | None:

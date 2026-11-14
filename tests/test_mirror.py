@@ -384,3 +384,11 @@ def test_cli_parses_shard_ranges_and_reports_mirror_status(mirror_env, monkeypat
     monkeypatch.setenv("QUARRY_MEGALITH_DIR", str(cfg.archive_dirs["megalith"]))
     out = CliRunner().invoke(app, ["archives", "status"]).output
     assert "2 members" in out and "1/2 shards scanned" in out and REV[:10] in out
+
+
+def test_ext_for_never_raises_on_a_malformed_range():
+    from argus_quarry.ingest import _ext_for
+
+    # An empty span (size 0) is refused by the download, not by naming its temp file.
+    assert _ext_for("https://example.org/00001.tar#bytes=10-9") == ".jpg"
+    assert _ext_for("https://example.org/a.png?x=1#bytes=0-9") == ".png"
