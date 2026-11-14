@@ -64,3 +64,11 @@ def test_subject_category_and_query():
 )
 def test_normalise_category(raw, expected):
     assert normalise_category(raw) == expected
+
+
+def test_subject_queries_put_the_primary_first_then_unique_aliases():
+    from argus_quarry.models import Subject
+
+    s = Subject(name="Mark Twain", aliases=["Samuel Clemens", "MARK TWAIN", "", "Samuel Clemens"])
+    assert s.queries == ["Mark Twain", "Samuel Clemens"]
+    assert Subject(name="Red dress", search="red dress fashion").queries == ["red dress fashion"]

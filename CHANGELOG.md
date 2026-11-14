@@ -19,6 +19,10 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 - A download that gets 403 / 404 / 410 now fails at once with `RemoteGone` instead of being retried with backoff.
 - The archive index schema is now 4, which adds `pos`, an item's row in the published embeddings. Existing indexes report `stale` until `archives index` rebuilds them (about 30 s for PD12M).
 
+### Fixed
+
+- Commons honours `--limit` past 50 candidates per subject ([#14](https://github.com/smk762/argus-quarry/issues/14)). The search used to make one request capped at 50 hits; it now follows the API's `continue` token, 50 hits per request, until it has `--limit` images or the results run out. A subject's seed `aliases` (e.g. `Samuel Clemens` for Mark Twain) are now searched too, after the primary name, while the subject is still short of `--limit`. A file found by more than one search counts once.
+
 ## [0.3.1] - 2026-10-24
 
 ### Fixed

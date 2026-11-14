@@ -122,8 +122,24 @@ class Subject(BaseModel):
 
     @property
     def query(self) -> str:
-        """The string a downloader searches the archive with."""
+        """The primary string a downloader searches the archive with."""
         return self.search or self.name
+
+    @property
+    def queries(self) -> list[str]:
+        """Every search string for this subject: :attr:`query` first, then each alias.
+
+        Blank and case-insensitively repeated strings are dropped, so a subject
+        whose alias matches its name is not searched twice.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for q in (self.query, *self.aliases):
+            q = (q or "").strip()
+            if q and q.casefold() not in seen:
+                seen.add(q.casefold())
+                out.append(q)
+        return out
 
 
 class Alternate(BaseModel):

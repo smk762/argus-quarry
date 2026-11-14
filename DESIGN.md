@@ -166,7 +166,9 @@ two interchangeable sources:
 
 - **Curated seeds (default, deterministic):** `seeds/<category>.yaml` — small,
   hand-maintained lists (`name`, optional `search`, `aliases`; plus
-  `wikidata_id` / birth / death for `identity`). This is what dev/QA runs against
+  `wikidata_id` / birth / death for `identity`). A downloader searches
+  `Subject.queries`: `search` (else `name`), then each alias, paging each one
+  until `--limit` candidates per subject are found. This is what dev/QA runs against
   so results are reproducible and licence-safe. `load_subjects()` merges all
   categories; `--category` restricts to one.
 - **Wikidata SPARQL harvester (optional, `--from-wikidata`, identity only):**
