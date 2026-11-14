@@ -121,6 +121,7 @@ argus-quarry verify              # re-check files decode + match recorded SHA256
 | `archives index [NAMES…]` | Build (or rebuild) the DuckDB search index under `$QUARRY_HOME/cache/archives/`; `--threads` (default: all cores), `--memory-limit` (DuckDB ceiling; past it, joins spill to disk); `--embeddings` also builds PD12M's [vector index](#semantic-search-pd12m), `--embeddings-only` builds just that |
 | `archives search NAME` | Search an indexed archive: `--q`, `--exclude`, `--collection` (repeatable), `--min-short-side`, `--semantic TEXT` or `--similar-to ID` (rank by meaning / likeness), `--limit` |
 | `archives fetch SPEC` | Land a slice JSON through normal ingest; `--dry-run` lists what would be fetched |
+| `archives mirror-index` | Index tar-member offsets in Megalith's [Drawthings mirror](#megalith-mirror) so slices can fall back to it (resumable); `--shards 0-99`, `--workers`, `--rps` |
 
 `run`, `fetch`, `export` and `list` all accept `--category`
 (`identity` / `wardrobe` / `setting` / `concept`); with none given they span every category.
@@ -155,9 +156,13 @@ A single SQLite database (`portraits.sqlite`, WAL mode) with two tables:
   (the identity-only columns stay `NULL` for wardrobe / setting / concept subjects)
 - **`photographs`** — `category · title · photographer · year · source · source_url ·
   licence · attribution · width · height · file_size · filename ·
-  **sha256 (UNIQUE)** · phash · remote_url · status · downloaded_at`
+  **sha256 (UNIQUE)** · phash · remote_url · fetched_from · status · downloaded_at`
 
-`sha256` is the exact-dedup key (idempotent reruns); `status`
+`remote_url` is the source's own full-resolution URL, always kept so a file can
+be re-fetched at original size; it is also the resume key. `fetched_from` is set
+only when a mirror served the bytes because the source no longer had them, and
+names that mirror; a `#bytes=START-END` fragment marks a range within a larger
+file (see [Megalith mirror](#megalith-mirror)). `sha256` is the exact-dedup key (idempotent reruns); `status`
 (`pending → downloading → complete`, plus `duplicate` / `quarantined` / `failed`)
 tracks resumability. `phash` is recorded opportunistically and is *informational
 only* — it never drives dedup here (that's [argus-curator](https://github.com/smk762/argus-curator)'s job).
@@ -275,7 +280,7 @@ pipeline as every other source (licence gate, SHA256 dedup, provenance).
 | Archive | Items | Filter on | Images come from |
 |---|---|---|---|
 | [PD12M](https://huggingface.co/datasets/Spawning/PD12M) | 12.4M | caption, institution (640), licence (CC0 / PDM), size, MIME type | the public `s3://pd12m` bucket |
-| [Megalith-10m](https://huggingface.co/datasets/madebyollin/megalith-10m) | 9.58M | Florence-2 caption (8.94M), Flickr account, size (~9.4M) | Flickr (1024px) |
+| [Megalith-10m](https://huggingface.co/datasets/madebyollin/megalith-10m) | 9.58M | Florence-2 caption (8.94M), Flickr account, size (~9.4M) | Flickr (1024px), falling back to the [Drawthings mirror](#megalith-mirror) |
 
 Megalith's links are a shuffled sample, so the Flickr account is its only built-in
 grouping. It also has no per-photo licence column, so each record states the
@@ -362,7 +367,41 @@ The server exposes the same thing over HTTP. Every route is `GET` except the fet
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |
-| `POST /archives/{name}/fetch` (slice JSON body) | NDJSON `start` / `item` / `done` or `error` frames; **403 unless `QUARRY_ALLOW_FETCH=1`**, with the slice and CLI command in the body; 409 while another fetch runs |
+| `POST /archives/{name}/fetch` (slice JSON body) | NDJSON `start` / `item` / `done` or `error` frames (an `item` frame's `fetched_from` is the URL the bytes came from); **403 unless `QUARRY_ALLOW_FETCH=1`**, with the slice and CLI command in the body; 409 while another fetch runs |
+
+### Megalith mirror
+
+Flickr photos whose owners have since deleted them or made them private return
+404 / 410 / 403. [drawthingsai/megalith-10m](https://huggingface.co/datasets/drawthingsai/megalith-10m)
+holds ~9.4M of the 9.58M images as 1024px JPEGs in 959 tar shards (~1.9 TB), and
+Hugging Face serves byte ranges, so quarry can fetch a single image from its shard
+once it knows where the image sits in it:
+
+```bash
+argus-quarry archives mirror-index                 # all 959 shards; resumable
+argus-quarry archives mirror-index --shards 0-99   # or a few at a time
+```
+
+This walks each shard's tar headers with range reads, about one 8 KB read per
+image, roughly 9.4M requests in all. `--rps` (default 20) caps the request rate
+across `--workers` (default 4). Each shard's offsets are saved once that shard is
+done, so an interrupted run picks up at the next unscanned shard, and a shard that
+fails is retried by the next run. The offsets are pinned to the dataset revision
+in the archived `SOURCE.json`. They live under `$QUARRY_HOME/cache/archives/`
+(`megalith-mirror/` plus the `megalith-mirror.duckdb` lookup table), and
+`archives status` shows progress.
+
+Once indexed, a Megalith slice tries Flickr first and, if Flickr reports the photo
+gone (403 / 404 / 410), fetches the mirror copy instead. Other failures (timeouts,
+5xx) don't fall back. Set `"prefer_mirror": true` on a slice to fetch from the
+mirror first and touch Flickr only for photos the mirror lacks, which is kinder to
+Flickr for bulk pulls. The licence gate and SHA256 dedup apply as usual. A
+photograph that came from the mirror keeps the Flickr image as its `remote_url` and
+records the pinned shard URL plus the byte range as its `fetched_from`
+(`https://huggingface.co/datasets/drawthingsai/megalith-10m/resolve/<rev>/00042.tar#bytes=START-END`),
+and keeps the Flickr page as its `source_url`. The fragment is never sent to the
+server; quarry turns it back into a `Range` request, so the recorded URL alone
+re-fetches the same bytes.
 
 ## Suite integration
 

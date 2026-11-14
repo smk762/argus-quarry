@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS photographs (
     sha256         TEXT UNIQUE,
     phash          TEXT,
     remote_url     TEXT NOT NULL,
+    fetched_from   TEXT,
     status         TEXT NOT NULL DEFAULT 'pending',
     downloaded_at  TEXT
 );
@@ -300,6 +301,7 @@ class ProvenanceStore:
                     "filename": "TEXT",
                     "sha256": "TEXT",
                     "phash": "TEXT",
+                    "fetched_from": "TEXT",
                     "status": "TEXT NOT NULL DEFAULT 'pending'",
                     "downloaded_at": "TEXT",
                 },
@@ -397,13 +399,18 @@ class ProvenanceStore:
         height: int | None,
         file_size: int,
         phash: str | None = None,
+        fetched_from: str | None = None,
     ) -> None:
+        """Record a landed file. ``fetched_from`` is the mirror URL that served the bytes, if not ``remote_url``.
+
+        ``remote_url`` itself is never rewritten: it stays the full-resolution primary and the resume key.
+        """
         self._conn.execute(
             """UPDATE photographs
                    SET status = 'complete', filename = ?, sha256 = ?, width = ?, height = ?,
-                       file_size = ?, phash = ?, downloaded_at = ?
+                       file_size = ?, phash = ?, downloaded_at = ?, fetched_from = ?
                    WHERE id = ?""",
-            (filename, sha256, width, height, file_size, phash, _now(), photo_id),
+            (filename, sha256, width, height, file_size, phash, _now(), fetched_from, photo_id),
         )
         self._conn.commit()
 
@@ -551,6 +558,7 @@ class ProvenanceStore:
             sha256=row["sha256"],
             phash=row["phash"],
             remote_url=row["remote_url"],
+            fetched_from=row["fetched_from"] if "fetched_from" in keys else None,
             status=row["status"],
             downloaded_at=row["downloaded_at"],
         )

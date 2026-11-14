@@ -104,6 +104,7 @@ _PHOTO_FIELDS = (
     "filename",
     "sha256",
     "remote_url",
+    "fetched_from",
     "status",
     "downloaded_at",
 )
@@ -601,6 +602,7 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
                                 "total": total,
                                 "status": outcome.status,
                                 "url": record.remote_url,
+                                "fetched_from": outcome.fetched_from,
                                 "reason": outcome.reason,
                             }
                         )

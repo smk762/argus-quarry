@@ -126,6 +126,21 @@ class Subject(BaseModel):
         return self.search or self.name
 
 
+class Alternate(BaseModel):
+    """Another place the same image's bytes can be fetched from (a mirror).
+
+    Ingest falls back to an alternate when the primary ``remote_url`` reports the
+    bytes gone (``403``/``404``/``410``). The photograph keeps the primary as its
+    ``remote_url`` (full-res, the resume key) and records the mirror that served
+    the bytes as ``fetched_from``, so provenance names the host.
+    ``remote_url`` may carry a ``#bytes=START-END`` fragment (one member of a tar).
+    """
+
+    remote_url: str
+    #: Rate-limit bucket for this host (``NetClient`` paces each source separately).
+    rate_source: str
+
+
 class SourceRecord(BaseModel):
     """The common contract every downloader yields (DESIGN.md section 4).
 
@@ -155,6 +170,10 @@ class SourceRecord(BaseModel):
     source_url: str
     licence: str
     attribution: str | None = None
+
+    # mirrors of the same bytes, tried in order when remote_url is gone (or first, when preferred)
+    alternates: list[Alternate] = Field(default_factory=list)
+    prefer_alternates: bool = False
 
     @field_validator("category")
     @classmethod
@@ -192,6 +211,8 @@ class Photograph(BaseModel):
     phash: str | None = None
 
     remote_url: str
+    #: The mirror URL that served the bytes when the primary ``remote_url`` didn't (else ``None``).
+    fetched_from: str | None = None
     status: str = "pending"
     downloaded_at: str | None = None
 
