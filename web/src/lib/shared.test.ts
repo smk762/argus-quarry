@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { DemoStrip } from "@/components/DemoStrip";
+import { DemoStrip, STRIP_SITE } from "@/components/DemoStrip";
 
 import { strip, stripHtml } from "../../vendor/dh/dh-strip.mjs";
 
@@ -26,7 +26,7 @@ const rendered = (current?: string) => renderToStaticMarkup(createElement(DemoSt
 
 describe("dh-strip", () => {
   it("renders the shared source's markup", () => {
-    expect(rendered()).toBe(squash(stripHtml({ current: "quarry", label: strip.defaultLabel })));
+    expect(rendered()).toBe(squash(stripHtml({ current: STRIP_SITE, label: strip.defaultLabel })));
     expect(rendered("cull")).toBe(squash(stripHtml({ current: "cull", label: strip.defaultLabel })));
   });
 
@@ -40,10 +40,13 @@ describe("dh-strip", () => {
     expect(html).toContain('<nav class="dh-strip" aria-label="Dragonhound Labs demos" data-dh-site="quarry">');
     expect(html).toContain(`<span class="dh-strip-more">${strip.labelMore}</span>`);
     expect(strip.defaultLabel).toBe("recorded");
-    // dh-shared 1.2.7 does not list Quarry yet, so no link is current; once a re-sync lists it, only that one is.
-    const current = html.match(/<a [^>]*aria-current="page"[^>]*>/g) ?? [];
-    const listed = strip.links.some((link) => (link.site as string) === "quarry");
-    expect(current).toEqual(listed ? [expect.stringContaining('data-dh-site="quarry"')] : []);
+  });
+
+  it("lists Quarry and marks its link current, and only it (dh-shared 1.2.8)", () => {
+    expect(strip.links.map((link) => link.site)).toContain(STRIP_SITE);
+    const html = renderToStaticMarkup(createElement(DemoStrip));
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(html).toContain('<a href="https://quarry.dragonhound.dev/" data-dh-site="quarry" aria-current="page">Quarry</a>');
   });
 
   it("links the family in the same tab", () => {
