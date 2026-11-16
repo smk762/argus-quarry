@@ -389,6 +389,14 @@ and blocked the release smoke test (issue #10).
 
 This keeps us to one real UI (the demo) instead of maintaining a second.
 
+**Hosted demo (2026-11).** [quarry.dragonhound.dev](https://quarry.dragonhound.dev) is a static
+replay of one recorded run, not a product UI: quarry stays CLI-only. `scripts/record_tape.py`
+runs the normal harvest and ingest against Commons for a few non-identity subjects
+(`docs/demo/subjects.yaml`) and writes down each candidate's licence, verdict and provenance;
+`web/` (Next.js static export, `make pages`) shows that tape. Only landed PD/CC0 files appear
+as images (640 px WebP copies); quarantined candidates are text and a link to Commons. The
+site never calls Commons or a quarry server.
+
 ---
 
 ## 10. Licensing / feasibility notes (for the 5–7k, 20–40 GB target)

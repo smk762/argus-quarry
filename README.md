@@ -28,6 +28,10 @@ downstream by [argus-curator](https://github.com/smk762/argus-curator) and
 [argus-lens](https://github.com/smk762/argus-lens); quarry never re-implements
 them.
 
+**Demo:** [quarry.dragonhound.dev](https://quarry.dragonhound.dev) replays a real recorded run:
+the licence Commons gave each candidate, whether quarry landed or quarantined it, and the
+provenance it recorded. It is a static replay, not a UI for quarry.
+
 > **Want a UI?** Quarry has no UI of its own (see [DESIGN.md](DESIGN.md) §9), but
 > `argus-quarry serve` exposes an [HTTP API](#http-server) that the suite's web
 > frontend — [**argus-studio**](https://github.com/smk762/argus-studio) — uses for
@@ -442,6 +446,15 @@ adding one never touches ingest, storage, or export.
 make lint     # ruff
 make test     # pytest
 make check    # lint + test + build
+```
+
+The hosted demo lives in `web/` (Next.js static export). `make pages` builds it into `web/out/`
+from the committed tape in `web/public/tape/`. To re-record the tape (talks to Wikimedia Commons):
+
+```bash
+uv run --no-sync python scripts/record_tape.py record --subjects docs/demo/subjects.yaml --limit 10 --fresh
+# look at every landed image; list any photo of a real person in docs/demo/exclusions.json
+uv run --no-sync python scripts/record_tape.py build
 ```
 
 ## Related projects

@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+/*
+ * Dragonhound shared layer (vendor/dh, vendored from dragonhound.dev/brand/v1 by vendor/dh/sync-shared.mjs; never
+ * edit those files here). Tokens first so everything below reads them; the strip and badge styles are the family's.
+ *
+ * The page's colour names map onto the shared --dh-* tokens, so light and dark both come from dh-tokens.css
+ * (`data-theme` on <html>, set by public/dh-theme.js, else the system preference). `inline` makes each utility read
+ * the variable itself, so a theme switch needs no rebuild. Quarry keeps the family accent.
+ * Verdict colours use the status fills, which also read as text on the page background in both themes; a verdict
+ * always carries its word as well, so colour is never the only signal.
+ */
+@import "../../vendor/dh/dh-tokens.css";
+@import "../../vendor/dh/dh-strip.css";
+@import "../../vendor/dh/dh-badge.css";
+
+/* What is drawn on a filled verdict mark: white on the light theme's dark fills, the background on the dark theme's light ones. */
+:root {
+  --on-fill: #ffffff;
+}
+:root[data-theme="dark"] {
+  --on-fill: var(--dh-bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --on-fill: var(--dh-bg);
+  }
+}
+
+@theme inline {
+  --color-base-900: var(--dh-bg);
+  --color-base-800: var(--dh-surface);
+  --color-base-700: var(--dh-surface-2);
+  /* Control outlines: stronger than the decorative border, so a button reads as one in both themes. */
+  --color-base-600: color-mix(in srgb, var(--dh-muted) 55%, var(--dh-surface));
+
+  --color-accent-primary: var(--dh-accent);
+  --color-accent-secondary: var(--dh-accent);
+  --color-accent-tertiary: var(--dh-accent);
+  --color-on-accent: var(--dh-on-accent);
+
+  --color-text-primary: var(--dh-text);
+  --color-text-secondary: var(--dh-muted);
+  --color-text-muted: var(--dh-muted);
+
+  --color-success: var(--dh-success);
+  --color-warning: var(--dh-warn);
+  --color-error: var(--dh-danger);
+  --color-info: var(--dh-accent);
+  --color-on-fill: var(--on-fill);
+
+  --color-interactive: var(--dh-accent);
+  --color-interactive-hover: color-mix(in srgb, var(--dh-accent) 85%, var(--dh-text));
+
+  --font-sans: var(--dh-font);
+  --font-display: var(--dh-font);
+  --font-mono: var(--dh-mono);
+
+  --text-display: 32px;
+  --text-display--line-height: 1.3;
+  --text-heading: 24px;
+  --text-heading--line-height: 1.3;
+  --text-subheading: 20px;
+  --text-subheading--line-height: 1.4;
+  --text-body: 16px;
+  --text-body--line-height: 1.6;
+  --text-small: 14px;
+  --text-small--line-height: 1.6;
+  /* The family floor for dense tool UIs (--dh-text-2xs): nothing smaller anywhere on the page. */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.5;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --shadow-soft: 0 8px 24px var(--dh-shadow-color);
+  --shadow-glow: var(--dh-glow);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html,
+body {
+  background: var(--dh-bg);
+  color: var(--dh-text);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--dh-accent) 35%, transparent);
+}
+
+/* A modal keeps scroll gestures to itself: without these, scrolling over the backdrop or past the end of a dialog
+   scrolls the page behind it. Progressive enhancement; never lock the page with overflow on html or body. */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+:focus-visible {
+  outline: var(--dh-focus-ring);
+  outline-offset: var(--dh-focus-offset);
+}
+
+/* Skip link: off-screen until focused. */
+.skip-link {
+  position: absolute;
+  left: var(--dh-space-2);
+  top: var(--dh-space-2);
+  z-index: 100;
+  transform: translateY(-200%);
+  padding: var(--dh-space-2) var(--dh-space-3);
+  border-radius: var(--dh-radius-md);
+  background: var(--dh-surface);
+  color: var(--dh-text);
+  box-shadow: var(--dh-shadow-hover);
+  font: var(--dh-weight-semibold) var(--dh-text-sm) / 1.2 var(--dh-font);
+}
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* The theme toggle shows the moon in light and the sun in dark, from the first paint. */
+.theme-icon-sun { display: none; }
+:root[data-theme="dark"] .theme-icon-sun { display: block; }
+:root[data-theme="dark"] .theme-icon-moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-icon-sun { display: block; }
+  :root:not([data-theme="light"]) .theme-icon-moon { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
