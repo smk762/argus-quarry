@@ -1,4 +1,4 @@
-/*! dh-theme v1.2.7 | Dragonhound Labs light/dark theme, shared across *.dragonhound.dev.
+/*! dh-theme v1.2.8 | Dragonhound Labs light/dark theme, shared across *.dragonhound.dev.
  *
  * Load it as a plain, blocking script in <head>, before the stylesheet if you can:
  *     <meta name="color-scheme" content="light dark">
@@ -10,7 +10,7 @@
  * Model (two-state, system default): no stored value means "follow prefers-color-scheme".
  * Toggling stores an explicit override; toggling back to the system's own scheme clears it.
  * Storage: a "dh-theme" cookie on Domain=.dragonhound.dev (so the choice follows you between
- * dragonhound.dev, studio., lightbox., atlas., cull., realms., safelight., assay., sightline., mask.), host-only on any other host (localhost, previews).
+ * dragonhound.dev, studio., lightbox., atlas., cull., realms., safelight., assay., sightline., mask., quarry.), host-only on any other host (localhost, previews).
  * The cookie is set only when someone uses the toggle. A legacy localStorage "theme" value
  * (the landing page's old key) is read once and migrated.
  *

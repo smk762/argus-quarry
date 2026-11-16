@@ -1,15 +1,16 @@
 // The Dragonhound Labs family bar, rendered natively from the vendored source (vendor/dh/dh-strip.mjs,
-// dh-shared 1.2.7): links, labels and mark come from there, so a re-sync updates it with no hand copy.
+// dh-shared 1.2.8): links, labels and mark come from there, so a re-sync updates it with no hand copy.
 // Styles are vendor/dh/dh-strip.css (imported by globals.css). No JS. src/lib/shared.test.ts checks the
 // rendered markup against the module's own stripHtml().
 //
 // The label is the default suffix, " · recorded output" (strip.defaultLabel, "recorded"): this site replays a
-// recording. dh-shared 1.2.7 does not list Quarry yet, so no link is marked current until a re-sync adds it.
+// recording. dh-shared 1.2.8 lists Quarry, so its link is marked current (data-dh-site="quarry" here and on <html>
+// says the same for dh-strip.css). On phones the link list scrolls sideways; dh-theme.js scrolls the current link into view.
 import { strip } from "../../vendor/dh/dh-strip.mjs";
 
 export const STRIP_SITE = "quarry";
 
-/** The strip, with this site's link marked current once the shared layer lists it. Same-tab links. */
+/** The strip, with this site's link marked current. Same-tab links. */
 export function DemoStrip({ current = STRIP_SITE }: { current?: string }) {
   const { home } = strip;
   return (

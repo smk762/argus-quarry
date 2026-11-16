@@ -1,7 +1,7 @@
-# Dragonhound shared design layer (dh-shared v1, currently 1.2.7)
+# Dragonhound shared design layer (dh-shared v1, currently 1.2.8)
 
 The one source of truth for what the Dragonhound Labs sites share: dragonhound.dev (this repo,
-the reference look), Studio, Lightbox, Atlas, Cull, Realms, Safelight, Assay and Sightline. Each repo vendors a pinned copy, so there is no
+the reference look), Studio, Lightbox, Atlas, Cull, Realms, Safelight, Assay, Sightline, Mask and Quarry. Each repo vendors a pinned copy, so there is no
 runtime dependency and no CSP change. A checksum keeps the copies honest.
 
 | File | What it is |
@@ -121,7 +121,7 @@ One source, two forms: `dh-strip.mjs` exports the links, labels and mark (`strip
 `dh-strip.html` is generated from it by `npm run shared:stamp`, and the build fails if the two drift.
 
 - **Static HTML:** paste `dh-strip.html` as the first element in `<body>` after the skip link, include `dh-strip.css`
-  after the tokens, and say which site this is with **`data-dh-site="studio"`** (or `lightbox`, `atlas`, `cull`, `realms`, `safelight`, `assay`, `sightline`, `mask`) on `<html>`
+  after the tokens, and say which site this is with **`data-dh-site="studio"`** (or `lightbox`, `atlas`, `cull`, `realms`, `safelight`, `assay`, `sightline`, `mask`, `quarry`) on `<html>`
   or on the `<nav class="dh-strip">`. Don't edit the markup: `dh-strip.css` shows the current link from that
   attribute (no JS needed), and `dh-theme.js` adds `aria-current="page"` to it, also for strips mounted later.
   A hand-set `aria-current` still works.
@@ -137,8 +137,8 @@ One source, two forms: `dh-strip.mjs` exports the links, labels and mark (`strip
   TypeScript picks up the types from `dh-strip.d.mts` next to it (1.2.1; for a `.mjs` import TypeScript looks for `.d.mts`, not `.d.ts`).
 
 It is a `<nav aria-label="Dragonhound Labs demos">` landmark, 30 px tall. Links are same-tab (all `*.dragonhound.dev` hosts are internal: make sure your
-external-link rewriter treats them that way). Below 880 px (720 px in 1.2.4, 640 px in 1.2.2 and 1.2.3, 560 px before) the "Dragonhound Labs" text and
-the label suffix are visually hidden (still read out). Below 600 px the eight links no longer fit, so the link list scrolls
+external-link rewriter treats them that way). Below 1024 px (1.2.8; 968 px in 1.2.7, 880 px in 1.2.5, 720 px in 1.2.4, 640 px in 1.2.2 and 1.2.3, 560 px before) the "Dragonhound Labs" text and
+the label suffix are visually hidden (still read out). Below 720 px (1.2.8; 664 px in 1.2.7, 600 px in 1.2.5) the ten links no longer fit, so the link list scrolls
 sideways on its own (1.2.5) while the mark and "Live demo" stay put; its edges fade while there is more to scroll that way
 (scroll-driven animations; browsers without them clip the list at the edge), and `dh-theme.js` scrolls the current
 site's link into view. Spacing tightens below 420 px, and below 360 px the strip text drops to 12 px. The bar never wraps.
@@ -231,6 +231,21 @@ CI snippet for a target repo (GitHub Actions):
 9. Verify: 390 px and 1440 px in both themes, toggle on one subdomain and reload another (cookie `Domain=.dragonhound.dev`), zero CSP errors, Lighthouse unchanged or better.
 
 ## Changelog
+
+- **1.2.8**
+  - `dh-strip.mjs`: Quarry (`quarry`, https://quarry.dragonhound.dev/, argus-quarry) joins the strip after Mask:
+    Lightbox, Studio, Atlas, Cull, Realms, Safelight, Assay, Sightline, Mask, Quarry. `dh-strip.html`, the current-site
+    rules in `dh-strip.css` and the `DhSite` type follow.
+  - `dh-strip.css`: ten links, the current one semibold, and the longer suffix need 955 px in Chromium with Linux system
+    fonts. The nine-link bar of 1.2.7 measured about 60 px wider elsewhere (961 px against 900 px here), so the phone
+    layout (mark only, short label) applies below 1024 px (was 968 px), leaving room for wider fonts. Without the name
+    and suffix the ten links need 679 px, so the link list scrolls sideways below 720 px (was 664 px). The 420 px and
+    360 px tightening is unchanged. Measured in Chromium at every width from 320 to 1030 px and at 1280 and 1440 px,
+    both suffixes, each site current: no page or bar overflow, "Live demo" always on screen, the current link always
+    in view, links at least 25 px wide.
+  - `dh-theme.js` and the landing's external-link rule: comments name the new site. The test page has the new link
+    and the new phone width. The README's opening list names Mask and Quarry, and its strip section gives the current
+    breakpoints (it still gave 1.2.5's).
 
 - **1.2.7**
   - `dh-strip.mjs`: Mask (`mask`, https://mask.dragonhound.dev/, argus-mask) joins the strip after Sightline: Lightbox,
