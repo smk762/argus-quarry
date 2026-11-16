@@ -1,0 +1,23 @@
+# Subjects for the hosted demo's recording (scripts/record_tape.py). Same fields as a
+# seeds/<category>.yaml file, with the category on each subject.
+#
+# Chosen for full-colour photographs. Commons hosts many CC0 photos imported from
+# Unsplash, so "<subject> Unsplash" finds mostly landable files. Coral reef is searched
+# plainly: Commons returns a real mix there (NOAA public-domain photos and CC BY-SA
+# uploads), so the recording also shows what quarry quarantines. No identity subjects.
+subjects:
+  - name: Hot air balloons
+    category: concept
+    search: hot air balloon Unsplash
+
+  - name: Tulips
+    category: concept
+    search: tulip field Unsplash
+
+  - name: Autumn forest
+    category: setting
+    search: autumn forest Unsplash
+
+  - name: Coral reef
+    category: setting
+    search: coral reef

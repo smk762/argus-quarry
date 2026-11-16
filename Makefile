@@ -2,7 +2,7 @@
 DIST := dist
 UV := uv
 
-.PHONY: help install dev lint fmt test build clean smoke check
+.PHONY: help install dev lint fmt test build clean smoke check web-install pages shared-check
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -32,7 +32,7 @@ build: clean  ## Build sdist + wheel into dist/
 	@ls -lh $(DIST)/
 
 clean:  ## Remove build artifacts
-	rm -rf $(DIST) build src/*.egg-info src/argus_quarry/*.egg-info
+	rm -rf $(DIST) build src/*.egg-info src/argus_quarry/*.egg-info web/.next web/out
 
 smoke: build  ## Build wheel, install in throwaway venv, smoke-test import
 	$(eval TMPVENV := $(shell mktemp -d))
@@ -45,3 +45,13 @@ smoke: build  ## Build wheel, install in throwaway venv, smoke-test import
 check: lint test build  ## Full local CI: lint + test + build
 	@echo ""
 	@echo "All checks passed."
+
+# ── Hosted demo (quarry.dragonhound.dev): a static replay of a recorded run, see DESIGN.md §9 ──
+web-install:  ## Install the demo site's dependencies (web/)
+	cd web && npm ci
+
+pages: web-install  ## Static export of the recorded tape to web/out/, with a hash CSP on every page
+	cd web && npm run build
+
+shared-check:  ## The vendored Dragonhound shared layer is unedited and matches the published v1 manifest
+	node web/vendor/dh/sync-shared.mjs --check . --against https://dragonhound.dev/brand/v1/manifest.json --allow-outdated
