@@ -453,7 +453,6 @@ from the committed tape in `web/public/tape/`. To re-record the tape (talks to W
 
 ```bash
 uv run --no-sync python scripts/record_tape.py record --subjects docs/demo/subjects.yaml --limit 10 --fresh
-# look at every landed image; list any photo of a real person in docs/demo/exclusions.json
 uv run --no-sync python scripts/record_tape.py build
 ```
 

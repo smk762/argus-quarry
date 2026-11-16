@@ -6,7 +6,7 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Added
 
-- **Hosted demo** at [quarry.dragonhound.dev](https://quarry.dragonhound.dev): a static replay of one real Commons run (four non-identity subjects, 37 candidates shown) with each candidate's licence, verdict, reason and provenance. `scripts/record_tape.py` records it, `web/` shows it, and `make pages` builds `web/out/`. Only landed PD/CC0 files are shown as images. Quarry itself stays CLI-only (DESIGN.md §9).
+- **Hosted demo** at [quarry.dragonhound.dev](https://quarry.dragonhound.dev): a static replay of one real Commons run (four subjects, 100 candidates: 89 landed, 11 quarantined) with each candidate's licence, verdict, reason and provenance, filterable by verdict, category and subject. `scripts/record_tape.py` records it, `web/` shows it, and `make pages` builds `web/out/`. Only landed PD/CC0 files are shown as images. Quarry itself stays CLI-only (DESIGN.md §9).
 
 ### Fixed
 

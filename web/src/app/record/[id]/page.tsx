@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { RecordNav } from "@/components/RecordNav";
 import { Card, Code, Ext, Kv, SectionTitle, VerdictBadge } from "@/components/ui";
-import { bytes, dims, displayTitle, summaries, tape, type TapeRecord, subjectName } from "@/lib/tape";
+import { bytes, dims, displayTitle, tape, type TapeRecord, subjectName } from "@/lib/tape";
 
 export const dynamicParams = false;
 
@@ -25,7 +25,7 @@ export default async function RecordPage({ params }: { params: Promise<{ id: str
   const p = r.provenance;
   return (
     <>
-      <RecordNav id={r.id} items={summaries()} />
+      <RecordNav id={r.id} />
       <div className="mb-5 flex flex-wrap items-start gap-x-3 gap-y-2">
         <h1 className="min-w-0 flex-1 basis-[16rem] font-display text-subheading font-semibold [overflow-wrap:anywhere] sm:text-heading">{displayTitle(r.title)}</h1>
         <VerdictBadge verdict={r.verdict} className="mt-1.5 text-small" />

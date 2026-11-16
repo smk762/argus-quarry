@@ -5,15 +5,16 @@ The tape (web/public/tape/tape.json) is what quarry.dragonhound.dev replays. Its
 - No identity subject. A run that has one is refused, not filtered.
 - Image files only for records that landed with a licence quarry accepts (PD or CC0). A
   quarantined, failed, duplicate or skipped candidate is text and a link to its Commons page.
-- Records named in the exclusions file (a landed photo whose main subject is a real person, say)
-  are left out, and the tape says how many and why.
+- Every candidate the run saw is on the tape: nothing is dropped to improve the numbers.
 - No absolute path, private address or email address anywhere: pool paths are relative to
-  $QUARRY_HOME, and anything that still looks like one fails the build.
+  $QUARRY_HOME, an email address in a Commons credit line is replaced by "[email address removed]",
+  and anything that still looks like one fails the build.
 """
 
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 from collections import Counter
 
@@ -50,6 +51,16 @@ class TapeError(ValueError):
 def leaks(text: str) -> list[str]:
     """Every path, private address or email address left in ``text``."""
     return [f"{kind}: {m.group(0)}" for kind, pattern in LEAKS for m in pattern.finditer(text)]
+
+
+EMAIL = LEAKS[3][1]
+EMAIL_REDACTED = "[email address removed]"
+
+
+def credit_text(text: str | None) -> str | None:
+    """A Commons credit line as plain text: HTML entities decoded (the downloader strips only tags), and an
+    author's email address, which some credit lines carry, replaced: the tape does not publish it."""
+    return EMAIL.sub(EMAIL_REDACTED, html.unescape(text)).strip() if text else text
 
 
 def strip_paths(value, prefixes: dict[str, str]):
@@ -125,25 +136,18 @@ def reason_for(entry: dict, verdict: str, licence: dict, max_mp: float) -> str:
     return f"Quarry already had a row for this file ({entry['outcome'].get('reason')}), so it did nothing."
 
 
-def build_tape(run: dict, exclusions: list[dict]) -> tuple[dict, dict[str, str]]:
+def build_tape(run: dict) -> tuple[dict, dict[str, str]]:
     """The tape, and the image files to publish (record id -> thumbnail name in the recording)."""
     for subject in run["subjects"]:
         if subject["category"] == "identity":
-            raise TapeError(f"{subject['name']} is an identity subject; the demo shows no photos of real people")
-    excluded_by_url = {e["source_url"]: e["reason"] for e in exclusions}
+            raise TapeError(f"{subject['name']} is an identity subject; the demo records none")
     max_mp = run["settings"]["max_megapixels"]
 
     records: list[dict] = []
     files: dict[str, str] = {}
-    excluded: Counter[str] = Counter()
-    seen_urls: set[str] = set()
     for entry in run["entries"]:
         if entry["category"] == "identity":
             raise TapeError(f"{entry['title']} is in the identity category")
-        if entry.get("source_url") in excluded_by_url:
-            excluded[excluded_by_url[entry["source_url"]]] += 1
-            seen_urls.add(entry["source_url"])
-            continue
         verdict = verdict_for(entry)
         licence = licence_check(entry["licence"])
         if verdict == "landed" and not licence["accepted"]:
@@ -171,8 +175,8 @@ def build_tape(run: dict, exclusions: list[dict]) -> tuple[dict, dict[str, str]]
                     "source": "commons",
                     "source_url": entry.get("source_url"),
                     "remote_url": entry.get("remote_url"),
-                    "attribution": entry.get("attribution"),
-                    "photographer": entry.get("photographer"),
+                    "attribution": credit_text(entry.get("attribution")),
+                    "photographer": credit_text(entry.get("photographer")),
                     "year": entry.get("year"),
                     "mime": entry.get("mime"),
                     "commons_width": entry.get("width"),
@@ -192,9 +196,6 @@ def build_tape(run: dict, exclusions: list[dict]) -> tuple[dict, dict[str, str]]
                 "image": image,
             }
         )
-    missing = set(excluded_by_url) - seen_urls
-    if missing:
-        raise TapeError(f"exclusions name pages that are not in the run: {sorted(missing)}")
 
     by_licence: Counter[str] = Counter(r["licence"]["raw"] for r in records)
     accepted = {r["licence"]["raw"]: r["licence"]["accepted"] for r in records}
@@ -228,7 +229,6 @@ def build_tape(run: dict, exclusions: list[dict]) -> tuple[dict, dict[str, str]]
                 "uv run --no-sync python scripts/record_tape.py build",
             ],
             "equivalent_cli": f"argus-quarry fetch --source commons --limit {run['settings']['limit_per_subject']}",
-            "excluded": [{"reason": reason, "count": n} for reason, n in sorted(excluded.items())],
             "rerun": run["rerun"],
         },
         "summary": {

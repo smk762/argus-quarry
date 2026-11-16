@@ -69,7 +69,6 @@ export interface Tape {
     subjects_file: string;
     commands: string[];
     equivalent_cli: string;
-    excluded: { reason: string; count: number }[];
     rerun: Record<string, number>;
   };
   summary: {
@@ -96,22 +95,31 @@ export const VERDICTS: { key: Verdict; label: string; blurb: string }[] = [
 
 export const verdictLabel = (v: Verdict) => VERDICTS.find((d) => d.key === v)?.label ?? v;
 
-export const CATEGORIES = ["wardrobe", "setting", "concept"] as const;
+/** The categories and subjects on the tape, in recording order. */
+export const CATEGORIES = [...new Set(tape.summary.by_subject.map((s) => s.category))];
+export const SUBJECTS = tape.summary.by_subject.map((s) => ({ folder: s.folder, name: s.name, category: s.category }));
 
-/** The list filter, as carried in the URL: `?status=<verdict>&category=<category>`. Unknown values mean "all". */
+/** The list filter, as carried in the URL: `?status=<verdict>&category=<category>&subject=<folder>`. Unknown values
+ *  mean "all". */
 export interface Filter {
   status: Verdict | null;
   category: string | null;
+  subject: string | null;
 }
 
-export const ALL: Filter = { status: null, category: null };
+export const ALL: Filter = { status: null, category: null, subject: null };
+
+/** A filter with only the given fields set. */
+export const only = (f: Partial<Filter>): Filter => ({ ...ALL, ...f });
 
 export function parseFilter(params: { get(name: string): string | null } | null | undefined): Filter {
   const status = params?.get("status") ?? null;
   const category = params?.get("category") ?? null;
+  const subject = params?.get("subject") ?? null;
   return {
     status: VERDICTS.some((v) => v.key === status) ? (status as Verdict) : null,
-    category: category && tape.records.some((r) => r.category === category) ? category : null,
+    category: category && CATEGORIES.includes(category) ? category : null,
+    subject: subject && SUBJECTS.some((s) => s.folder === subject) ? subject : null,
   };
 }
 
@@ -119,6 +127,7 @@ export function filterQuery(filter: Filter): string {
   const q = new URLSearchParams();
   if (filter.status) q.set("status", filter.status);
   if (filter.category) q.set("category", filter.category);
+  if (filter.subject) q.set("subject", filter.subject);
   const s = q.toString();
   return s ? `?${s}` : "";
 }
@@ -137,15 +146,26 @@ export interface RecordSummary {
 export const summaries = (records: TapeRecord[] = tape.records): RecordSummary[] =>
   records.map((r) => ({ id: r.id, title: r.title, subject: r.subject, category: r.category, verdict: r.verdict, licence: r.licence.raw, image: r.image }));
 
-export const matches = (r: { verdict: Verdict; category: string }, f: Filter) =>
-  (!f.status || r.verdict === f.status) && (!f.category || r.category === f.category);
+/** The least a record page needs for Prev/Next: every record page carries this list, so it stays small. */
+export interface NavItem {
+  id: string;
+  verdict: Verdict;
+  category: string;
+  subject: string;
+}
+
+export const navItems = (records: TapeRecord[] = tape.records): NavItem[] =>
+  records.map((r) => ({ id: r.id, verdict: r.verdict, category: r.category, subject: r.subject }));
+
+export const matches = (r: { verdict: Verdict; category: string; subject: string }, f: Filter) =>
+  (!f.status || r.verdict === f.status) && (!f.category || r.category === f.category) && (!f.subject || r.subject === f.subject);
 
 export const recordHref = (id: string, filter: Filter = ALL) => `/record/${id}/${filterQuery(filter)}`;
 export const listHref = (filter: Filter = ALL) => `/records/${filterQuery(filter)}`;
 
 /** Where `id` sits in the filtered list, and its neighbours (wrapping at both ends). Falls back to the whole tape
  *  when the record is not in the filter (a hand-edited URL), so Prev and Next always go somewhere sensible. */
-export function position(items: { id: string; verdict: Verdict; category: string }[], id: string, filter: Filter) {
+export function position(items: { id: string; verdict: Verdict; category: string; subject: string }[], id: string, filter: Filter) {
   let used = filter;
   let list = items.filter((r) => matches(r, filter));
   if (!list.some((r) => r.id === id)) {

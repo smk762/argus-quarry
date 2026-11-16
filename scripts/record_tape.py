@@ -4,8 +4,7 @@
     #    into a throwaway pool. Writes run.json and a 640 px WebP of every landed file.
     uv run --no-sync python scripts/record_tape.py record --subjects docs/demo/subjects.yaml --limit 10
 
-    # 2. Turn that recording into the static site's tape (web/public/tape/), applying
-    #    docs/demo/exclusions.json. Offline; re-run it after editing the exclusions.
+    # 2. Turn that recording into the static site's tape (web/public/tape/). Offline.
     uv run --no-sync python scripts/record_tape.py build
 
 The recording lives outside the repo, in $QUARRY_DEMO_CACHE (default ~/.cache/dh-demo/quarry):
@@ -19,7 +18,7 @@ a second time over the same pool, to record that a rerun downloads nothing.
 
 What the tape never holds (scripts/demo_tape.py enforces it, tests/test_demo_tape.py tests it):
 an identity subject; an image file for anything that did not land with a PD or CC0 licence;
-a record listed in the exclusions file; an absolute path, private address or email address.
+an absolute path, private address or email address. Every candidate the run saw is on the tape.
 """
 
 from __future__ import annotations
@@ -279,8 +278,7 @@ def record(args: argparse.Namespace) -> None:
 def build(args: argparse.Namespace) -> None:
     cache: Path = args.cache.expanduser().resolve()
     run = json.loads((cache / "run.json").read_text(encoding="utf-8"))
-    exclusions = json.loads(args.exclusions.read_text(encoding="utf-8")) if args.exclusions.exists() else []
-    tape, files = demo_tape.build_tape(run, exclusions)
+    tape, files = demo_tape.build_tape(run)
     out: Path = args.out
     shutil.rmtree(out, ignore_errors=True)
     (out / "thumbs").mkdir(parents=True)
@@ -302,7 +300,6 @@ def main() -> None:
     rec.add_argument("--fresh", action="store_true", help="delete an earlier recording's pool first")
     bld = sub.add_parser("build", help="turn run.json into web/public/tape/")
     bld.add_argument("--cache", type=Path, default=DEFAULT_CACHE)
-    bld.add_argument("--exclusions", type=Path, default=ROOT / "docs" / "demo" / "exclusions.json")
     bld.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     {"record": record, "build": build}[args.cmd](args)

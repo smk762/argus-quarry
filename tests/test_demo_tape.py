@@ -115,7 +115,7 @@ def test_build_gives_images_to_landed_pd_and_cc0_only():
         _entry("bysa.jpg", "CC BY-SA 4.0", "quarantined"),
         _entry("tiff.tif", "Public domain", "", stage="search", mime="image/tiff", outcome=None),
     ]
-    tape, files = demo_tape.build_tape(_run(entries), [])
+    tape, files = demo_tape.build_tape(_run(entries))
     by_title = {r["title"]: r for r in tape["records"]}
     assert by_title["pd.jpg"]["image"] and by_title["cc0.jpg"]["image"]
     assert by_title["bysa.jpg"]["image"] is None and by_title["tiff.tif"]["image"] is None
@@ -129,11 +129,11 @@ def test_build_gives_images_to_landed_pd_and_cc0_only():
 
 def test_a_landed_record_with_an_unaccepted_licence_is_refused():
     with pytest.raises(demo_tape.TapeError, match="does not accept"):
-        demo_tape.build_tape(_run([_entry("odd.jpg", "CC BY-SA 4.0", "complete")]), [])
+        demo_tape.build_tape(_run([_entry("odd.jpg", "CC BY-SA 4.0", "complete")]))
 
 
 def test_check_tape_refuses_an_image_on_a_non_cleared_record():
-    tape, files = demo_tape.build_tape(_run([_entry("bysa.jpg", "CC BY-SA 4.0", "quarantined")]), [])
+    tape, files = demo_tape.build_tape(_run([_entry("bysa.jpg", "CC BY-SA 4.0", "quarantined")]))
     bad = copy.deepcopy(tape)
     bad["records"][0]["image"] = {"src": "thumbs/x.webp", "width": 1, "height": 1}
     with pytest.raises(demo_tape.TapeError, match="has an image"):
@@ -145,20 +145,19 @@ def test_check_tape_refuses_an_image_on_a_non_cleared_record():
 def test_identity_subjects_and_entries_are_refused():
     identity = [{"name": "Someone", "folder": "Someone", "category": "identity", "search": None}]
     with pytest.raises(demo_tape.TapeError, match="identity"):
-        demo_tape.build_tape(_run([], identity), [])
+        demo_tape.build_tape(_run([], identity))
     with pytest.raises(demo_tape.TapeError, match="identity"):
-        demo_tape.build_tape(_run([_entry("p.jpg", "Public domain", "complete", category="identity")]), [])
+        demo_tape.build_tape(_run([_entry("p.jpg", "Public domain", "complete", category="identity")]))
 
 
-def test_exclusions_drop_the_record_and_its_image_and_are_counted():
-    entries = [_entry("people.jpg", "Public domain", "complete"), _entry("loco.jpg", "Public domain", "complete")]
-    reason = "People pose in it."
-    tape, files = demo_tape.build_tape(_run(entries), [{"source_url": entries[0]["source_url"], "reason": reason}])
-    assert [r["title"] for r in tape["records"]] == ["loco.jpg"]
-    assert len(files) == 1
-    assert tape["recording"]["excluded"] == [{"reason": reason, "count": 1}]
-    with pytest.raises(demo_tape.TapeError, match="not in the run"):
-        demo_tape.build_tape(_run(entries), [{"source_url": "https://example.org/nope", "reason": reason}])
+def test_every_candidate_is_kept_quarantined_included():
+    entries = [_entry(f"q{i}.jpg", "CC BY-SA 4.0", "quarantined") for i in range(3)] + [
+        _entry("pd.jpg", "Public domain", "complete")
+    ]
+    tape, _ = demo_tape.build_tape(_run(entries))
+    assert len(tape["records"]) == 4
+    assert tape["summary"]["by_verdict"]["quarantined"] == 3
+    assert "excluded" not in tape["recording"]
 
 
 def test_strip_paths_replaces_prefixes_longest_first():
@@ -167,8 +166,19 @@ def test_strip_paths_replaces_prefixes_longest_first():
     assert out == {"a": ["$QUARRY_HOME/images/a.jpg", {"b": "decode: $QUARRY_DEMO_CACHE/tmp.jpg"}], "n": 3}
 
 
+def test_email_addresses_in_credit_lines_are_redacted_not_dropped():
+    entry = _entry(
+        "pd.jpg", "CC0", "complete", attribution="Jane Doe &lt;jane@example.org&gt;", photographer="jane@example.org"
+    )
+    tape, files = demo_tape.build_tape(_run([entry]))
+    prov = tape["records"][0]["provenance"]
+    assert prov["attribution"] == "Jane Doe <[email address removed]>"
+    assert prov["photographer"] == "[email address removed]"
+    assert len(files) == 1
+
+
 def test_pool_paths_are_relative_to_quarry_home():
-    tape, _ = demo_tape.build_tape(_run([_entry("pd.jpg", "Public domain", "complete")]), [])
+    tape, _ = demo_tape.build_tape(_run([_entry("pd.jpg", "Public domain", "complete")]))
     assert tape["records"][0]["provenance"]["path"] == "$QUARRY_HOME/images/concept/Aurora_borealis/a.jpg"
 
 
@@ -180,7 +190,7 @@ def test_a_leak_anywhere_fails_the_build(leak):
     entry = _entry("pd.jpg", "Public domain", "failed")
     entry["outcome"]["reason"] = f"decode: cannot open {leak}"
     with pytest.raises(demo_tape.TapeError, match="would publish"):
-        demo_tape.build_tape(_run([entry]), [])
+        demo_tape.build_tape(_run([entry]))
 
 
 def test_the_committed_tape_keeps_the_rules():

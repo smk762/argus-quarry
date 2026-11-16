@@ -1,10 +1,9 @@
 import Link from "next/link";
 
 import { Card, Code, Kv, LINK, SectionTitle, VerdictBadge } from "@/components/ui";
-import { listHref, tape, type Verdict, VERDICTS } from "@/lib/tape";
+import { listHref, only, tape, type Verdict, VERDICTS } from "@/lib/tape";
 
 const { recording: rec, summary } = tape;
-const excluded = rec.excluded.reduce((n, e) => n + e.count, 0);
 const minutes = (s: number) => (s < 90 ? `${s} seconds` : `${Math.round(s / 60)} minutes`);
 const when = (iso: string) => iso.replace("T", " ").replace("Z", " UTC");
 
@@ -35,13 +34,6 @@ export default function Home() {
             <span className="font-display text-display font-semibold leading-none">{summary.images}</span>
             <span className="text-small text-text-secondary">640 px copies of the landed files. Nothing else is shown as an image.</span>
           </Card>
-          {excluded ? (
-            <Card as="div" className="flex flex-col gap-1">
-              <span className="text-caption font-semibold uppercase tracking-wide text-text-muted">Left off this page</span>
-              <span className="font-display text-display font-semibold leading-none">{excluded}</span>
-              <span className="text-small text-text-secondary">Landed photos with people posing in them. This demo shows no photos of real people.</span>
-            </Card>
-          ) : null}
         </div>
         {unseen.length ? (
           <p className="mt-3 text-small text-text-muted">
@@ -90,7 +82,7 @@ export default function Home() {
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="tabular-nums text-text-secondary">{l.count}</span>
                   <span
-                    className={`w-24 rounded-sm border px-1.5 py-0.5 text-center text-caption font-semibold ${l.accepted ? "border-success/50 bg-success/10 text-success" : "border-warning/60 bg-warning/10 text-warning"}`}
+                    className={`w-28 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-center text-caption font-semibold ${l.accepted ? "border-success/50 bg-success/10 text-success" : "border-warning/60 bg-warning/10 text-warning"}`}
                   >
                     {l.accepted ? "✓ Accepted" : "✕ Not accepted"}
                   </span>
@@ -104,26 +96,29 @@ export default function Home() {
       <Card>
         <SectionTitle>Subjects</SectionTitle>
         <p className="mb-3 text-small text-text-secondary">
-          Up to {rec.settings.limit_per_subject} Commons results each. No identity (people) subjects are recorded for this demo.
+          {rec.settings.limit_per_subject} Commons results each, in search order. Open a subject to see its candidates.
         </p>
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {summary.by_subject.map((s) => (
-            <li key={s.folder} className="min-w-0 rounded-md border border-base-600/40 bg-base-900/40 p-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <span className="font-medium">{s.name}</span>
-                <Link href={listHref({ status: null, category: s.category })} className="text-caption text-text-muted underline-offset-2 hover:underline">
-                  {s.category}
-                </Link>
-              </div>
-              <p className="mt-0.5 text-caption text-text-muted [overflow-wrap:anywhere]">
-                search <Code>{s.search}</Code>
-              </p>
-              <Bar landed={s.by_verdict.landed ?? 0} total={s.total} />
-              <p className="mt-1 text-small text-text-secondary">
-                {VERDICTS.filter((v) => s.by_verdict[v.key])
-                  .map((v) => `${s.by_verdict[v.key]} ${v.label.toLowerCase()}`)
-                  .join(", ")}
-              </p>
+            <li key={s.folder} className="min-w-0">
+              <Link
+                href={listHref(only({ subject: s.folder }))}
+                className="block h-full rounded-md border border-base-600/40 bg-base-900/40 p-3 hover:border-interactive"
+              >
+                <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <span className="font-medium text-interactive">{s.name}</span>
+                  <span className="text-caption text-text-muted">{s.category}</span>
+                </span>
+                <span className="mt-0.5 block text-caption text-text-muted [overflow-wrap:anywhere]">
+                  search <Code>{s.search}</Code>
+                </span>
+                <Bar landed={s.by_verdict.landed ?? 0} total={s.total} />
+                <span className="mt-1 block text-small text-text-secondary">
+                  {VERDICTS.filter((v) => s.by_verdict[v.key])
+                    .map((v) => `${s.by_verdict[v.key]} ${v.label.toLowerCase()}`)
+                    .join(", ")}
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
@@ -175,13 +170,8 @@ export default function Home() {
             {Object.entries(rec.rerun)
               .map(([k, n]) => `${n} ${k}`)
               .join(", ")}
-            , for all {Object.values(rec.rerun).reduce((a, b) => a + b, 0)} candidates (the {excluded} left off this page included). Nothing was downloaded twice.
+            . Nothing was downloaded twice.
           </Kv>
-          {rec.excluded.map((e) => (
-            <Kv key={e.reason} label="Left out">
-              {e.count} landed {e.count === 1 ? "record" : "records"}. {e.reason}
-            </Kv>
-          ))}
         </dl>
       </Card>
     </div>
@@ -194,7 +184,7 @@ function Tile({ verdict, count, text }: { verdict: Verdict; count: number; text:
       <span>
         <VerdictBadge verdict={verdict} />
       </span>
-      <Link href={listHref({ status: verdict, category: null })} className="font-display text-display font-semibold leading-none hover:underline">
+      <Link href={listHref(only({ status: verdict }))} className="font-display text-display font-semibold leading-none hover:underline">
         {count}
       </Link>
       <span className="text-small text-text-secondary">{text}</span>

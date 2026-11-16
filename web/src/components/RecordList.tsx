@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
-import { ALL, CATEGORIES, type Filter, filterQuery, listHref, matches, parseFilter, type RecordSummary, recordHref, subjectName, VERDICTS } from "@/lib/tape";
+import { ALL, CATEGORIES, type Filter, filterQuery, listHref, matches, parseFilter, type RecordSummary, recordHref, SUBJECTS, subjectName, VERDICTS } from "@/lib/tape";
 
 import { VerdictBadge } from "./ui";
 
-/** The candidates, filtered by `?status=` and `?category=`. The prerendered page shows them all; the query is read in the browser. */
+/** The candidates, filtered by `?status=`, `?category=` and `?subject=`. The prerendered page shows them all; the query is read in the browser. */
 export function RecordList({ items }: { items: RecordSummary[] }) {
   return (
     <Suspense fallback={<List items={items} filter={ALL} />}>
@@ -33,7 +33,19 @@ function List({ items, filter }: { items: RecordSummary[]; filter: Filter }) {
   return (
     <>
       <div className="mb-5 space-y-2">
-        <div role="group" aria-label="Filter by verdict" className="flex flex-wrap gap-1">
+        <div role="group" aria-label="Filter by subject" className="flex flex-wrap items-center gap-1">
+          <span className="w-full text-caption font-semibold uppercase tracking-wide text-text-muted sm:w-20">Subject</span>
+          {[null, ...SUBJECTS].map((s) => {
+            const f = { ...filter, subject: s?.folder ?? null };
+            return (
+              <Link key={s?.folder ?? "all"} href={listHref(f)} aria-current={filter.subject === f.subject ? "page" : undefined} className={`${PILL} ${filter.subject === f.subject ? ON : OFF}`}>
+                {s?.name ?? "Every subject"} <span className="opacity-75">{count(f)}</span>
+              </Link>
+            );
+          })}
+        </div>
+        <div role="group" aria-label="Filter by verdict" className="flex flex-wrap items-center gap-1">
+          <span className="w-full text-caption font-semibold uppercase tracking-wide text-text-muted sm:w-20">Verdict</span>
           {[{ key: null, label: "All" }, ...verdicts].map((v) => {
             const f = { ...filter, status: v.key };
             return (
@@ -43,7 +55,8 @@ function List({ items, filter }: { items: RecordSummary[]; filter: Filter }) {
             );
           })}
         </div>
-        <div role="group" aria-label="Filter by category" className="flex flex-wrap gap-1">
+        <div role="group" aria-label="Filter by category" className="flex flex-wrap items-center gap-1">
+          <span className="w-full text-caption font-semibold uppercase tracking-wide text-text-muted sm:w-20">Category</span>
           {[null, ...CATEGORIES].map((c) => {
             const f = { ...filter, category: c };
             return (
@@ -65,7 +78,7 @@ function List({ items, filter }: { items: RecordSummary[]; filter: Filter }) {
           </>
         ) : null}
       </p>
-      {shown.length === 0 ? <p className="text-small text-text-muted">No candidate matches both filters.</p> : null}
+      {shown.length === 0 ? <p className="text-small text-text-muted">No candidate matches all of these filters.</p> : null}
       <ul className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
         {shown.map((r, i) => (
           <li key={r.id} className="min-w-0">

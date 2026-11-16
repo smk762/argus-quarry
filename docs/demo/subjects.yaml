@@ -1,22 +1,23 @@
 # Subjects for the hosted demo's recording (scripts/record_tape.py). Same fields as a
 # seeds/<category>.yaml file, with the category on each subject.
 #
-# No identity subjects: the demo shows no photos of real people (issue #22).
-# Picked because Commons returns a real mix of licences for them, so the
-# recording shows both what quarry lands and what it quarantines.
+# Chosen for full-colour photographs. Commons hosts many CC0 photos imported from
+# Unsplash, so "<subject> Unsplash" finds mostly landable files. Coral reef is searched
+# plainly: Commons returns a real mix there (NOAA public-domain photos and CC BY-SA
+# uploads), so the recording also shows what quarry quarantines. No identity subjects.
 subjects:
-  - name: Kimono
-    category: wardrobe
-    search: kimono woodblock print ukiyo-e
+  - name: Hot air balloons
+    category: concept
+    search: hot air balloon Unsplash
 
-  - name: Gothic cathedral interior
+  - name: Tulips
+    category: concept
+    search: tulip field Unsplash
+
+  - name: Autumn forest
     category: setting
-    search: cathedral interior engraving
+    search: autumn forest Unsplash
 
-  - name: Aurora borealis
-    category: concept
-    search: aurora borealis northern lights
-
-  - name: Steam locomotive
-    category: concept
-    search: steam locomotive 1900
+  - name: Coral reef
+    category: setting
+    search: coral reef
