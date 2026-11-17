@@ -33,6 +33,7 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Changed
 
+- `max_file_bytes` is enforced (#46). It was reserved and capped nothing. Every download now aborts past it. Its default rises from 15 MiB to 100 MiB, so it rejects only runaway files and ordinary large originals are still downscaled by the megapixel cap. Set it with `QUARRY_MAX_FILE_MB` (`0` = unlimited). An over-cap row gets the new `oversize` status with the bytes seen, counts in the fetch summary, and is skipped on reruns until the cap is raised past that size.
 - Release PRs into `main` now fail CI unless `CHANGELOG.md` has a dated, non-empty section newer than the latest tag, with `[Unreleased]` emptied and the compare link added (`scripts/check_changelog.py --release-pr`). A `v*` tag also checks for its section before anything publishes, so a missing section can no longer ship PyPI and the image without a GitHub Release, as v0.4.0 did.
 
 ## [0.4.0] - 2026-11-14

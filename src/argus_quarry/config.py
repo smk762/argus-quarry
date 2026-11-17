@@ -36,9 +36,10 @@ class QuarryConfig(BaseModel):
     # Per-file resolution ceiling (Q3). The full-res remote_url is always
     # kept in the DB, so a capped image can be re-fetched at original size later.
     max_megapixels: float = 12.0
-    # Reserved, not enforced: ingest does not pass this to NetClient.download, since a
-    # byte cap on the download would reject large originals the megapixel cap can downscale.
-    max_file_bytes: int = 15 * 1024 * 1024
+    # Per-download ceiling in bytes (0 = unlimited): a stream past it is aborted and the row
+    # marked ``oversize``. A guard against runaway downloads, not a landing size: it is set
+    # well above ordinary originals, which the megapixel cap downscales instead.
+    max_file_bytes: int = 100 * 1024 * 1024
 
     # Total raw-pool ceiling in bytes. 0 = unlimited.
     max_total_bytes: int = 40 * 1024 * 1024 * 1024
@@ -112,6 +113,11 @@ class QuarryConfig(BaseModel):
         ua = os.environ.get("COMMONS_USER_AGENT") or os.environ.get("QUARRY_USER_AGENT")
         if ua:
             data["user_agent"] = ua
+
+        max_mb = os.environ.get("QUARRY_MAX_FILE_MB")
+        if max_mb is not None and max_mb.strip() != "":
+            # 0 means unlimited.
+            data["max_file_bytes"] = int(float(max_mb) * 1024 * 1024)
 
         mp = os.environ.get("QUARRY_MAX_MEGAPIXELS")
         if mp:

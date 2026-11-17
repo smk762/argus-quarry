@@ -547,6 +547,8 @@ def _print_fetch_summary(summary) -> None:
     typer.echo(f"  skipped:      {summary.skipped}")
     typer.echo(f"  duplicate:    {summary.duplicate}")
     typer.echo(f"  quarantined:  {summary.quarantined}")
+    if summary.oversize:
+        typer.echo(f"  oversize:     {summary.oversize}  (over QUARRY_MAX_FILE_MB; raise it and rerun to retry)")
     typer.echo(f"  failed:       {summary.failed}")
     if summary.budget_reached:
         typer.echo("  ** budget cap reached — run stopped cleanly (rerun to resume) **")

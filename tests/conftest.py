@@ -53,7 +53,7 @@ class FakeNet:
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch):
     """Ambient settings from a developer shell or .env must not leak into tests."""
-    for var in ("QUARRY_ALLOW_FETCH", "QUARRY_PD12M_DIR", "QUARRY_MEGALITH_DIR"):
+    for var in ("QUARRY_ALLOW_FETCH", "QUARRY_PD12M_DIR", "QUARRY_MEGALITH_DIR", "QUARRY_MAX_FILE_MB"):
         monkeypatch.delenv(var, raising=False)
 
 
