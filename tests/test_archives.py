@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 duckdb = pytest.importorskip("duckdb", reason="archives extra not installed")
@@ -639,3 +640,83 @@ def test_a_keyerror_inside_an_archive_constructor_is_not_unknown_archive(tmp_pat
     assert "unknown archive" not in str(exc.value) and "missing setting" in str(exc.value)
     with pytest.raises(KeyError, match="unknown archive 'nope'"):
         get_archive("nope", QuarryConfig(home=tmp_path))
+
+
+def test_a_fetch_worker_that_fails_early_releases_the_lock_and_ends_the_stream(archives_config, monkeypatch):
+    import threading
+
+    import argus_quarry.ingest as ingest
+
+    original = ingest.FetchSummary
+
+    def boom():
+        raise RuntimeError("worker setup failed")
+
+    monkeypatch.setattr(ingest, "FetchSummary", boom)
+    client = _app(archives_config, monkeypatch, allow_fetch=True, net_factory=lambda _cfg: FakeNet({}))
+    spec = SliceSpec(archive="pd12m", subject="Harbour", query=ArchiveQuery(q="harbour")).model_dump(mode="json")
+    got: list = []
+    t = threading.Thread(target=lambda: got.append(client.post("/archives/pd12m/fetch", json=spec)), daemon=True)
+    t.start()
+    t.join(10)
+    assert got, "the fetch stream never ended"
+    frames = [json.loads(line) for line in got[0].text.splitlines()]
+    assert frames[-1]["type"] == "error" and "worker setup failed" in frames[-1]["message"]
+    monkeypatch.setattr(ingest, "FetchSummary", original)
+    again = client.post("/archives/pd12m/fetch", json=spec)
+    assert again.status_code != 409  # fetch_lock was released
+
+
+def _ssrf_env(monkeypatch, routes: dict[str, httpx.Response]):
+    import socket
+
+    import argus_quarry.server.app as server_app
+
+    hosts = {"cdn.test": "93.184.216.34", "evil.test": "127.0.0.1"}
+    real = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, port, *a, **k):
+        if host in hosts:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (hosts[host], port))]
+        return real(host, port, *a, **k)
+
+    monkeypatch.setattr(server_app.socket, "getaddrinfo", fake_getaddrinfo)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return routes.get(str(request.url), httpx.Response(404))
+
+    return server_app, httpx.MockTransport(handler), seen
+
+
+def test_archive_original_fetch_follows_public_redirects(archives_config, monkeypatch):
+    server_app, transport, _seen = _ssrf_env(
+        monkeypatch,
+        {
+            "https://cdn.test/a.jpg": httpx.Response(302, headers={"location": "https://cdn.test/b.jpg"}),
+            "https://cdn.test/b.jpg": httpx.Response(200, content=b"img"),
+        },
+    )
+    assert server_app._fetch_original(archives_config, "https://cdn.test/a.jpg", transport=transport) == b"img"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://127.0.0.1/x", "http://169.254.169.254/latest/meta-data", "http://evil.test/x", "file:///etc/passwd"],
+)
+def test_archive_original_fetch_refuses_internal_addresses(archives_config, monkeypatch, url):
+    server_app, transport, seen = _ssrf_env(monkeypatch, {})
+    with pytest.raises(server_app.UnsafeURL):
+        server_app._fetch_original(archives_config, url, transport=transport)
+    assert seen == []
+
+
+def test_archive_original_fetch_refuses_a_redirect_to_an_internal_address(archives_config, monkeypatch):
+    server_app, transport, seen = _ssrf_env(
+        monkeypatch,
+        {"https://cdn.test/a.jpg": httpx.Response(302, headers={"location": "http://169.254.169.254/latest"})},
+    )
+    with pytest.raises(server_app.UnsafeURL):
+        server_app._fetch_original(archives_config, "https://cdn.test/a.jpg", transport=transport)
+    assert seen == ["https://cdn.test/a.jpg"]  # the metadata endpoint was never requested

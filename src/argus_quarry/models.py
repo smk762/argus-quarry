@@ -47,7 +47,6 @@ _ACCEPTED_TOKENS = (
 )
 
 
-
 def _word(*alternatives: str) -> re.Pattern[str]:
     """Match any alternative as a whole token, so ``pd`` never matches inside ``updated``."""
     return re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, alternatives)) + r")(?![a-z0-9])")
