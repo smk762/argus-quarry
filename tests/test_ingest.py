@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from conftest import FakeNet, make_image_bytes, make_record
 
 from argus_quarry.ingest import BudgetReached, IngestEngine, fetch
@@ -154,3 +155,28 @@ def test_budget_reached_raises_when_pool_full(config):
             raise AssertionError("expected BudgetReached")
         except BudgetReached:
             pass
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("subject", "../../escaped"),
+        ("subject", "AC/DC"),
+        ("subject", ".."),
+        ("category", "../outside"),
+        ("category", "a\\b"),
+        ("source", "../../evil"),
+    ],
+)
+def test_unsafe_path_component_is_refused_before_anything_lands(config, field, value):
+    """A category/subject/source that isn't one path component never writes outside the pool (or anywhere)."""
+    url = "https://img/unsafe.jpg"
+    net = FakeNet(assets={url: make_image_bytes(seed=41)})
+    with ProvenanceStore(config.db_path) as store:
+        out = IngestEngine(config, store, net).ingest_record(make_record(url, **{field: value}))
+        assert out.status == "failed" and out.reason.startswith(f"unsafe_{field}=")
+        assert store.get_by_remote_url(url) is None  # no DB row either
+    assert net.downloads == []
+    home = config.images_dir.parent
+    landed = [p for p in home.parent.rglob("*") if p.is_file() and p.suffix in {".jpg", ".png"}]
+    assert landed == []

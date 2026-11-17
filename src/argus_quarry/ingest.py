@@ -51,6 +51,21 @@ def _ext_for(remote_url: str) -> str:
     return ext if ext in _ALLOWED_EXTS else ".jpg"
 
 
+def _unsafe_path_part(record: SourceRecord, existing: Photograph | None) -> str | None:
+    """The first category/subject/source that can't be one path component, else ``None``.
+
+    These name the landing folder (``images/<category>/<subject>/``), the pool filename and the
+    cache temp file. A separator, ``..`` or NUL would land a file outside ``images/`` or where the
+    DB row can't find it, so such a record is refused rather than rewritten: renaming it here would
+    break the ``category``/``subject`` columns readers rebuild the path from.
+    """
+    holder = existing or record
+    for field_name, value in (("category", holder.category), ("subject", holder.subject), ("source", record.source)):
+        if not value or value in {".", ".."} or any(c in value for c in "/\\\0"):
+            return f"unsafe_{field_name}={value!r}"
+    return None
+
+
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -95,6 +110,14 @@ class IngestEngine:
         existing = self.store.get_by_remote_url(record.remote_url)
         if existing and existing.status in {"complete", "duplicate", "quarantined"}:
             return IngestOutcome(status="skipped", photo_id=existing.id, reason=existing.status)
+
+        # Path components come from seed files, slice specs and downloaders: refuse any that would escape
+        # the pool before anything is written (DB row included).
+        if (unsafe := _unsafe_path_part(record, existing)) is not None:
+            if existing is not None:
+                self.store.set_status(existing.id, "failed")
+            logger.warning("unsafe_path_component", url=record.remote_url, reason=unsafe)
+            return IngestOutcome(status="failed", photo_id=existing.id if existing else None, reason=unsafe)
 
         if not is_accepted_licence(record.licence):
             self._quarantine(record, existing)
