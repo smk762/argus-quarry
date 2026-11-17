@@ -193,9 +193,14 @@ def stats() -> None:
 
 @app.command()
 def verify(
-    repair: bool = Option(False, "--repair", help="Mark rows whose files are missing/corrupt as failed"),
+    repair: bool = Option(
+        False, "--repair", help="Mark rows whose files are missing, corrupt or SHA256-mismatched as failed"
+    ),
 ) -> None:
-    """Verify landed files still exist, decode, and match their recorded SHA256."""
+    """Verify landed files still exist, decode, and match their recorded SHA256.
+
+    Exits 1 when a problem is found and not repaired, so it can gate scripts and CI.
+    """
     import hashlib
 
     from PIL import Image
@@ -231,12 +236,15 @@ def verify(
                     h.update(chunk)
             if ph.sha256 and h.hexdigest() != ph.sha256:
                 mismatch += 1
+                if repair and ph.id:  # the bytes no longer match their provenance: re-fetch them
+                    store.set_status(ph.id, "failed")
             else:
                 ok += 1
 
     typer.echo(f"ok={ok} missing={missing} corrupt={corrupt} sha_mismatch={mismatch}")
     if (missing or corrupt or mismatch) and not repair:
         typer.echo("(run with --repair to mark broken rows as failed for re-fetch)")
+        raise typer.Exit(code=1)
 
 
 @app.command()
