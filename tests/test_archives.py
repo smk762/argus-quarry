@@ -625,3 +625,17 @@ def test_cli_archive_errors_are_one_line_not_tracebacks(tmp_path, pd12m_dir, mon
     bad.write_text(json.dumps({"archive": "pd12m", "subject": "s", "category": "../../x"}))
     result = runner.invoke(app, ["archives", "fetch", str(bad)])
     assert result.exit_code == 2 and "category" in result.output
+
+
+def test_a_keyerror_inside_an_archive_constructor_is_not_unknown_archive(tmp_path, monkeypatch):
+    from argus_quarry import archives
+
+    def broken(config):
+        raise KeyError("missing setting")
+
+    monkeypatch.setitem(archives._REGISTRY, "broken", broken)
+    with pytest.raises(KeyError) as exc:
+        get_archive("broken", QuarryConfig(home=tmp_path))
+    assert "unknown archive" not in str(exc.value) and "missing setting" in str(exc.value)
+    with pytest.raises(KeyError, match="unknown archive 'nope'"):
+        get_archive("nope", QuarryConfig(home=tmp_path))

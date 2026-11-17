@@ -36,10 +36,10 @@ def available_archives() -> list[str]:
 
 
 def get_archive(name: str, config: QuarryConfig) -> Archive:
-    try:
-        return _REGISTRY[name](config)
-    except KeyError:
-        raise KeyError(f"unknown archive '{name}'; available: {', '.join(available_archives())}") from None
+    factory = _REGISTRY.get(name)
+    if factory is None:
+        raise KeyError(f"unknown archive '{name}'; available: {', '.join(available_archives())}")
+    return factory(config)  # a KeyError from inside the constructor is a real error, not "unknown"
 
 
 def slice_command(spec_file: str = "slice.json") -> str:
