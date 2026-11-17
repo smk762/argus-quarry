@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import structlog
+from argus_cortex.provenance import Provenance
 
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import Photograph
@@ -34,8 +35,12 @@ class ExportResult:
     subjects: set[str] = field(default_factory=set)
 
 
-#: Suffix of the provenance sidecar written beside each published file (``a.jpg`` -> ``a.jpg.provenance.json``).
-PROVENANCE_SUFFIX = ".provenance.json"
+#: Who wrote a sidecar. Darkroom records share the ``<stem>.json`` naming, so a reader checks this first.
+PRODUCER = "argus-quarry"
+#: Version of the sidecar shape; bump it when a field changes meaning or goes away.
+SIDECAR_SCHEMA = "argus-quarry.provenance/1"
+#: Categories whose photos show a real person. Their subjects never consented to their likeness being used.
+LIKENESS_CATEGORIES = frozenset({"identity"})
 #: The row fields a sidecar carries: licence, where the bytes came from, who made them, and their hash.
 _PROVENANCE_FIELDS = (
     "category", "subject", "title", "photographer", "year", "source", "source_url", "licence",
@@ -44,7 +49,30 @@ _PROVENANCE_FIELDS = (
 
 
 def provenance_path(dst: Path) -> Path:
-    return dst.with_name(dst.name + PROVENANCE_SUFFIX)
+    """The sidecar beside a published file: ``a.jpg`` -> ``a.json``, the name curator's ``--carry-sidecars`` carries."""
+    return dst.with_suffix(".json")
+
+
+def provenance_record(ph: Photograph) -> dict:
+    """The sidecar for *ph*: its row's provenance, the suite's shared ``Provenance`` and the likeness mark.
+
+    A licence covers the photo, not the person in it. Every photo in a person category is marked
+    ``likeness_consent: false`` explicitly (argus-mask#19), so curator and mask refuse it as a face
+    source rather than read consent into a missing field. Other categories carry no mark.
+    """
+    record: dict = {"producer": PRODUCER, "schema": SIDECAR_SCHEMA, **ph.model_dump(include=set(_PROVENANCE_FIELDS))}
+    record["provenance"] = Provenance(
+        kind="stock",
+        source=ph.source_url or ph.remote_url or ph.source,
+        license=ph.licence or "",
+        notes=ph.attribution or "",
+    ).model_dump(mode="json")
+    if ph.category in LIKENESS_CATEGORIES:
+        record["likeness_consent"] = False
+        record["likeness_note"] = (
+            "a real, possibly named person; the licence covers the photo, not consent to use their likeness"
+        )
+    return record
 
 
 def _safe_part(value: str | None) -> bool:
@@ -62,7 +90,7 @@ def _write_provenance(ph: Photograph, dst: Path) -> None:
     sidecar.parent.mkdir(parents=True, exist_ok=True)
     tmp = sidecar.with_name(f".{sidecar.name}.{os.getpid()}.tmp")
     try:
-        tmp.write_text(json.dumps(ph.model_dump(include=set(_PROVENANCE_FIELDS)), indent=2, sort_keys=True) + "\n")
+        tmp.write_text(json.dumps(provenance_record(ph), indent=2, sort_keys=True) + "\n")
         os.replace(tmp, sidecar)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -91,10 +119,15 @@ def export_tree(
 ) -> ExportResult:
     """Publish complete photographs into ``dest`` as ``<category>/<subject>/<file>``.
 
-    Each published file gets a ``<file>.provenance.json`` sidecar (licence, source, attribution,
-    hash), written first: a photo whose provenance can't be written is not published.
+    Each published file gets a ``<stem>.json`` sidecar (:func:`provenance_record`), written first:
+    a photo whose provenance can't be written is not published.
     """
     dest_root = Path(dest)
+    # The raw pool and the published tree stay apart: curator scans dest, and must never see the pool's
+    # side-car dirs (or publish into them).
+    home = config.home
+    if _within(dest_root, home) or _within(home, dest_root):
+        raise ValueError(f"export dest {dest_root} overlaps $QUARRY_HOME {home}; publish outside the raw pool")
     result = ExportResult(dest=str(dest_root), mode=mode)
 
     photos = store.iter_photographs(status="complete", licences=licences, subject=subject, category=category)

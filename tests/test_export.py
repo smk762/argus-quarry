@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from conftest import FakeNet, make_image_bytes, make_record
 
 from argus_quarry.export import export_tree
@@ -63,18 +64,39 @@ def test_export_category_filter(config, tmp_path):
 def test_export_writes_a_provenance_sidecar_per_file(config, tmp_path):
     import json
 
-    from argus_quarry.export import PROVENANCE_SUFFIX
+    from argus_cortex.provenance import Provenance
+
+    from argus_quarry.export import PRODUCER, SIDECAR_SCHEMA
 
     _land_two(config)
     dest = tmp_path / "published"
     with ProvenanceStore(config.db_path) as store:
         export_tree(config, store, dest, mode="symlink", category="wardrobe")
         (row,) = store.iter_photographs(category="wardrobe")
-    (img,) = [p for p in (dest / "wardrobe" / "Red_dress").iterdir() if not p.name.endswith(PROVENANCE_SUFFIX)]
-    meta = json.loads((img.parent / (img.name + PROVENANCE_SUFFIX)).read_text())
+    (img,) = [p for p in (dest / "wardrobe" / "Red_dress").iterdir() if p.suffix != ".json"]
+    # <stem>.json: the name curator's --carry-sidecars carries on to its own export
+    meta = json.loads(img.with_suffix(".json").read_text())
+    assert meta["producer"] == PRODUCER and meta["schema"] == SIDECAR_SCHEMA
     assert meta["licence"] == "CC0" and meta["source_url"] == row.source_url
     assert meta["remote_url"] == "https://img/dress.jpg" and meta["sha256"] == row.sha256
     assert meta["attribution"] == "Someone"
+    prov = Provenance.model_validate(meta["provenance"])  # the suite's shared shape, round-trips
+    assert prov.kind == "stock" and prov.license == "CC0" and prov.source == row.source_url
+    assert "likeness_consent" not in meta  # not a person category: no mark
+
+
+def test_export_marks_a_person_photo_as_not_consented(config, tmp_path):
+    import json
+
+    _land_two(config)
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        export_tree(config, store, dest, mode="symlink", category="identity")
+    sidecars = list((dest / "identity").rglob("*.json"))
+    assert sidecars
+    for sidecar in sidecars:
+        meta = json.loads(sidecar.read_text())
+        assert meta["likeness_consent"] is False  # explicit, never inferred from a missing field
 
 
 def test_export_refuses_a_row_whose_path_climbs_out(config, tmp_path):
@@ -93,3 +115,11 @@ def test_export_refuses_a_row_whose_path_climbs_out(config, tmp_path):
         result = export_tree(config, store, dest, mode="copy", category="../../escape")
     assert result.published == 0 and result.skipped == 1
     assert not (dest / "../../escape").exists()
+
+
+@pytest.mark.parametrize("where", ["inside", "around", "same"])
+def test_export_refuses_a_dest_that_overlaps_the_pool(config, tmp_path, where):
+    _land_two(config)
+    dest = {"inside": config.home / "published", "around": config.home.parent, "same": config.home}[where]
+    with ProvenanceStore(config.db_path) as store, pytest.raises(ValueError, match="overlaps"):
+        export_tree(config, store, dest, mode="symlink")
