@@ -487,6 +487,8 @@ def test_cors_allows_post_only_when_fetch_is_enabled(archives_config, monkeypatc
             "/archives/pd12m/fetch",
             headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST"},
         )
+        # credentials only ever go to an explicit origin list, never with the "*" wildcard
+        assert ("access-control-allow-credentials" in r.headers) is bool(origins and origins != ["*"])
         return r.headers.get("access-control-allow-methods", "")
 
     assert "POST" not in preflight(False)
@@ -720,3 +722,66 @@ def test_archive_original_fetch_refuses_a_redirect_to_an_internal_address(archiv
     with pytest.raises(server_app.UnsafeURL):
         server_app._fetch_original(archives_config, "https://cdn.test/a.jpg", transport=transport)
     assert seen == ["https://cdn.test/a.jpg"]  # the metadata endpoint was never requested
+
+
+def test_a_second_fetch_while_one_runs_is_409(archives_config, monkeypatch):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+
+    class BlockingNet(FakeNet):
+        def download(self, url, dest, **kw):
+            entered.set()
+            assert release.wait(10), "the test never released the first fetch"
+            return super().download(url, dest, **kw)
+
+    assets = {f"https://s3.example/a{i}.jpeg": make_image_bytes(64, seed=i) for i in (1, 4)}
+    client = _app(archives_config, monkeypatch, allow_fetch=True, net_factory=lambda _cfg: BlockingNet(assets))
+    spec = SliceSpec(archive="pd12m", subject="Harbour", query=ArchiveQuery(q="harbour")).model_dump(mode="json")
+    first: list = []
+    t = threading.Thread(target=lambda: first.append(client.post("/archives/pd12m/fetch", json=spec)), daemon=True)
+    t.start()
+    try:
+        assert entered.wait(10), "the first fetch never started downloading"
+        second = client.post("/archives/pd12m/fetch", json=spec)
+        assert second.status_code == 409 and "already running" in second.json()["detail"]
+    finally:
+        release.set()
+        t.join(10)
+    assert first and json.loads(first[0].text.splitlines()[-1])["type"] == "done"
+    assert client.post("/archives/pd12m/fetch", json=spec).status_code == 200  # the lock is free again
+
+
+def _tree(root: Path, skip: Path) -> dict[str, tuple[int, int]]:
+    """Every path under *root* except *skip*'s subtree, with its size and mtime."""
+    out = {}
+    for p in root.rglob("*"):
+        if p == skip or skip in p.parents:
+            continue
+        st = p.lstat()
+        out[str(p.relative_to(root))] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def test_archives_write_nothing_outside_quarry_home(tmp_path, pd12m_dir, megalith_dir, monkeypatch):
+    # The archive dirs sit beside $QUARRY_HOME under tmp_path, as a real :ro mount sits beside it on disk.
+    home = tmp_path / "quarry"
+    before = _tree(tmp_path, home)
+    cfg = QuarryConfig(home=home, archive_dirs={"pd12m": pd12m_dir, "megalith": megalith_dir})
+    cfg.ensure_dirs()
+    for name in ("pd12m", "megalith"):
+        get_archive(name, cfg).build_index()
+        get_archive(name, cfg).build_index()  # a rebuild replaces the index, still inside home
+    assets = {f"https://s3.example/a{i}.jpeg": make_image_bytes(64, seed=i) for i in (1, 4)}
+    client = _app(cfg, monkeypatch, allow_fetch=True, net_factory=lambda _cfg: FakeNet(assets))
+    assert client.get("/archives/pd12m/search", params={"q": "harbour"}).status_code == 200
+    spec = SliceSpec(archive="pd12m", subject="Harbour", query=ArchiveQuery(q="harbour")).model_dump(mode="json")
+    assert json.loads(client.post("/archives/pd12m/fetch", json=spec).text.splitlines()[-1])["type"] == "done"
+    assert _tree(tmp_path, home) == before
+
+
+def test_megalith_licence_label_reads_as_pd_never_cc0():
+    """Megalith has no per-photo licence; its dataset-filter label must not claim CC0 for every item."""
+    from argus_quarry.archives.megalith import LICENCE
+
+    assert "cc0" not in LICENCE.lower() and normalise_licence(LICENCE) == "PD"

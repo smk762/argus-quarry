@@ -154,8 +154,19 @@ $QUARRY_HOME/                          # side-car state — NEVER scanned by cur
 
 $DATASET_DIR/                          # published, curator-ready view (via export)
 ├── identity/Albert_Einstein/…          # symlinks (default) or copies into the pool
+│   ├── <stem>.jpg
+│   └── <stem>.json                    # provenance sidecar (see below)
 └── wardrobe/Red_dress/…
 ```
+
+`DATASET_DIR` must not overlap `$QUARRY_HOME`; `export` refuses a destination inside the pool or around it.
+
+Each published file gets a `<stem>.json` sidecar, the name argus-curator's `--carry-sidecars` carries on
+to its own export. It holds `"producer": "argus-quarry"` and a `schema` id (darkroom writes `<stem>.json`
+too), the row's provenance (licence, source and landing URLs, attribution, SHA256, …), and a
+`provenance` block in argus-cortex's shared `Provenance` shape (`kind: "stock"`). A photo in a person
+category (`identity`) also carries `"likeness_consent": false`: the licence covers the photo, not the
+person in it, so curator and argus-mask refuse it as a face source.
 
 ## Provenance model
 

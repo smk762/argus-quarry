@@ -35,6 +35,10 @@ from argus_quarry.models import (
         # tokens match whole words only: "pd" is not in "updated"
         ("CC BY-SA, updated 2020", None),
         ("Proprietary (rpd licence)", None),
+        # issue #40's three false accepts
+        ("Copyrighted, updated 2019", None),
+        ("CC BY-SA 4.0; GPDL", None),
+        ("All rights reserved (see PDF)", None),
         ("All rights reserved", None),
         ("", None),
         (None, None),
@@ -84,3 +88,11 @@ def test_subject_queries_put_the_primary_first_then_unique_aliases():
     s = Subject(name="Mark Twain", aliases=["Samuel Clemens", "MARK TWAIN", "", "Samuel Clemens"])
     assert s.queries == ["Mark Twain", "Samuel Clemens"]
     assert Subject(name="Red dress", search="red dress fashion").queries == ["red dress fashion"]
+
+
+def test_pre_0_2_aliases_stay_importable():
+    import argus_quarry
+    from argus_quarry.subjects import load_people
+
+    assert argus_quarry.PortraitRecord is argus_quarry.SourceRecord and argus_quarry.Person is Subject
+    assert callable(load_people)

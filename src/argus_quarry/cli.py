@@ -562,7 +562,11 @@ def _do_export(config, dest: Path | None, *, copy: bool, licences=None, subject=
         dest = Path(os.environ.get("DATASET_DIR", "./data"))
     mode = "copy" if copy else "symlink"
     with _open_reader(config) as store:
-        result = export_tree(config, store, dest, mode=mode, licences=licences, subject=subject, category=category)
+        try:
+            result = export_tree(config, store, dest, mode=mode, licences=licences, subject=subject, category=category)
+        except ValueError as exc:  # dest overlaps the raw pool
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=2) from None
     typer.echo(
         f"Published {result.published} image(s) ({mode}) across {len(result.subjects)} "
         f"subject(s) -> {result.dest}  (missing={result.missing}, skipped={result.skipped})"

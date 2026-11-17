@@ -90,6 +90,21 @@ def test_exact_duplicate_bytes_are_deduped(config):
         assert len(files) == 1
 
 
+def test_a_matching_phash_never_dedups(config, monkeypatch):
+    """phash is informational only: different bytes with the same phash both land (near-dup is curator's)."""
+    import argus_quarry.ingest as ingest
+
+    monkeypatch.setattr(ingest, "_compute_phash", lambda _im: "ffffffffffffffff")
+    a, b = "https://img/a.jpg", "https://img/b.jpg"
+    net = FakeNet(assets={a: make_image_bytes(seed=1), b: make_image_bytes(seed=2)})
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, net)
+        assert engine.ingest_record(make_record(a)).status == "complete"
+        assert engine.ingest_record(make_record(b)).status == "complete"
+        rows = list(store.iter_photographs(status="complete"))
+    assert len(rows) == 2 and {r.phash for r in rows} == {"ffffffffffffffff"}
+
+
 def test_non_identity_lands_under_category_subfolder(config):
     url = "https://img/red_dress.jpg"
     net = FakeNet(assets={url: make_image_bytes(seed=11)})

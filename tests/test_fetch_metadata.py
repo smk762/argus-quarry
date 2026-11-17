@@ -64,3 +64,18 @@ def test_check_root_accepts_a_mounted_volume(tmp_path, monkeypatch):
     mount = tmp_path.resolve()
     monkeypatch.setattr(fetch_meta.os.path, "ismount", lambda p: Path(p) in (mount, Path("/")))
     fetch_meta.check_root(tmp_path / "pd", create=True)
+
+
+@pytest.mark.parametrize("path", ["images/0001.tar", "a/b.jpg", "x.JPEG", "thumbs/p.png", "s.webp"])
+def test_no_part_ever_fetches_a_photo(path):
+    """The script archives metadata only (CLAUDE.md): every part's filter refuses photos and shards."""
+    from fnmatch import fnmatch
+
+    def kept(part, name: str) -> bool:  # huggingface_hub.filter_repo_objects' rule
+        allowed = part.allow is None or any(fnmatch(name, p) for p in part.allow)
+        return allowed and not any(fnmatch(name, p) for p in fetch_meta.ignore_patterns(part))
+
+    for parts in fetch_meta.SOURCES.values():
+        for part in parts.values():
+            assert not kept(part, path) and not kept(part, path.lower()), (part.name, path)
+            assert kept(part, "data/part-00001.parquet") or part.allow == ("embeddings/*",)
