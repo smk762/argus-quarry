@@ -52,6 +52,9 @@ IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 SCAN_WINDOW = 8192
 
 _BLOCK = 512
+#: Largest PAX / GNU long-name payload read: real ones are a few hundred bytes, and the
+#: size field is untrusted, so a bigger one is a corrupt or hostile archive, not a name.
+MAX_EXT_HEADER = 1 << 20
 
 
 def shard_url(revision: str, shard: str) -> str:
@@ -70,8 +73,9 @@ class TarMember:
 
 
 def _octal(field: bytes) -> int:
-    if field and field[0] & 0x80:  # GNU base-256 for sizes past 8 GB
-        return int.from_bytes(field[1:], "big")
+    if field and field[0] in (0x80, 0xFF):  # GNU base-256 (sizes past 8 GB); 0xFF marks a negative
+        n = int.from_bytes(field[1:], "big")
+        return n - 256 ** (len(field) - 1) if field[0] == 0xFF else n  # as tarfile.nti does
     text = field.rstrip(b"\0 ").strip()
     return int(text, 8) if text else 0
 
@@ -130,8 +134,12 @@ def scan_tar(read: Callable[[int, int], bytes], *, window: int = SCAN_WINDOW) ->
         if not _checksum_ok(header):
             raise ValueError(f"bad tar header checksum at offset {pos}")
         size = _octal(header[124:136])
+        if size < 0:
+            raise ValueError(f"negative tar member size at offset {pos}")
         typeflag = header[156:157]
         data = pos + _BLOCK
+        if typeflag in (b"x", b"L") and size > MAX_EXT_HEADER:
+            raise ValueError(f"tar extended header of {size} bytes at offset {pos} (max {MAX_EXT_HEADER})")
         if typeflag == b"x":
             pending.update(_pax_records(get(data, size)))
         elif typeflag == b"L":
@@ -140,12 +148,21 @@ def scan_tar(read: Callable[[int, int], bytes], *, window: int = SCAN_WINDOW) ->
             name = header[:100].rstrip(b"\0").decode("utf-8", "replace")
             if header[257:263] == b"ustar\0" and header[345:500].strip(b"\0"):  # POSIX only: GNU puts atime here
                 name = header[345:500].rstrip(b"\0").decode("utf-8", "replace") + "/" + name
-            size = int(pending.get("size", size))
+            try:
+                size = int(pending.get("size", size))
+            except ValueError:
+                raise ValueError(f"bad PAX size at offset {pos}") from None
+            if size < 0:
+                raise ValueError(f"negative tar member size at offset {pos}")
             yield TarMember(pending.get("path", name), data, size)
             pending = {}
         elif typeflag != b"g":  # directories, links, …: nothing to fetch
             pending = {}
         pos = data + -(-size // _BLOCK) * _BLOCK
+
+
+def _tsv_safe(key: str) -> bool:
+    return bool(key) and key.isprintable() and '"' not in key and "\\" not in key
 
 
 # ── offset index ─────────────────────────────────────────────────────
@@ -217,16 +234,27 @@ class MegalithMirror:
                 cdn = net.resolve_redirect(url, source=RATE_SOURCE)
                 return net.read_range(cdn, offset, length, source=RATE_SOURCE)
 
-        rows = [
-            (Path(m.name).stem, m.offset, m.size)
-            for m in scan_tar(read)
-            if m.size > 0 and Path(m.name).suffix.lower() in IMAGE_SUFFIXES
-        ]
+        rows = []
+        for m in scan_tar(read):
+            if m.size <= 0 or Path(m.name).suffix.lower() not in IMAGE_SUFFIXES:
+                continue
+            key = Path(m.name).stem
+            if not _tsv_safe(key):  # a tab, newline or quote would break the whole lookup build
+                logger.warning("mirror_member_skipped", shard=shard, name=m.name)
+                continue
+            rows.append((key, m.offset, m.size))
         self.shards_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.shards_dir / f".{shard}.{os.getpid()}-{uuid.uuid4().hex[:8]}.part"
         tmp.write_text("key\toffset\tsize\n" + "".join(f"{k}\t{o}\t{s}\n" for k, o, s in rows))
         os.replace(tmp, self.shards_dir / f"{shard}.tsv")
         return len(rows)
+
+    def _offsets_revision(self) -> str | None:
+        """The revision the scanned ``.tsv`` offsets belong to (``None`` when unrecorded)."""
+        try:
+            return (self.work_dir / "REVISION").read_text().strip() or None
+        except OSError:
+            return None
 
     def build(
         self,
@@ -245,8 +273,10 @@ class MegalithMirror:
         known = self.shards()
         wanted = known if shards is None else sorted(set(shards) & set(known))
         marker = self.work_dir / "REVISION"
-        if marker.is_file() and marker.read_text().strip() != revision:
-            logger.warning("mirror_revision_changed", old=marker.read_text().strip(), new=revision)
+        scanned_at = self._offsets_revision()
+        if scanned_at != revision and self.scanned():
+            # Offsets of another (or an unrecorded) revision point at other bytes: rescan.
+            logger.warning("mirror_revision_changed", old=scanned_at, new=revision)
             shutil.rmtree(self.shards_dir, ignore_errors=True)
         self.work_dir.mkdir(parents=True, exist_ok=True)
         marker.write_text(revision + "\n")
@@ -295,8 +325,14 @@ class MegalithMirror:
         tmp = self.config.archive_index_dir / f".megalith-mirror.{token}.building.duckdb"
         con = duckdb.connect(str(tmp))
         built = False
+        scanned_at = self._offsets_revision()
+        stale = scanned_at != revision
+        if stale and any(self.shards_dir.glob("*.tsv")):
+            # Never stamp offsets scanned at another revision with this one: they'd range-read
+            # other bytes. An empty table until `build` rescans.
+            logger.warning("mirror_offsets_stale", scanned_at=scanned_at, revision=revision)
         try:
-            if any(self.shards_dir.glob("*.tsv")):
+            if not stale and any(self.shards_dir.glob("*.tsv")):
                 offsets = f"""
                     SELECT regexp_extract(filename, '([0-9]+)\\.tsv$', 1) AS shard, key, "offset", size
                     FROM read_csv({sql_path(self.shards_dir / "*.tsv")}, header = true, delim = '\t',
@@ -323,7 +359,7 @@ class MegalithMirror:
             """)
             con.execute(
                 "CREATE TABLE meta AS SELECT ? AS repo, ? AS revision, ? AS shards, now() AS built_at",
-                [MIRROR_REPO, revision, len(self.scanned())],
+                [MIRROR_REPO, revision, 0 if stale else len(self.scanned())],
             )
             n = con.execute("SELECT count(*) FROM members").fetchone()[0]
             built = True

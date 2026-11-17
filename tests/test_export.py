@@ -30,12 +30,12 @@ def test_export_symlink_publishes_category_tree(config, tmp_path):
     with ProvenanceStore(config.db_path) as store:
         result = export_tree(config, store, dest, mode="symlink")
     assert result.published == 3
-    links = list((dest / "identity" / "Albert_Einstein").glob("*"))
+    links = list((dest / "identity" / "Albert_Einstein").glob("*.jpg"))
     assert len(links) == 2
     assert all(p.is_symlink() and p.resolve().exists() for p in links)
     # non-identity subject lands under its category subfolder
     assert (dest / "wardrobe" / "Red_dress").is_dir()
-    assert len(list((dest / "wardrobe" / "Red_dress").glob("*"))) == 1
+    assert len(list((dest / "wardrobe" / "Red_dress").glob("*.jpg"))) == 1
 
 
 def test_export_copy_and_licence_filter(config, tmp_path):
@@ -45,7 +45,7 @@ def test_export_copy_and_licence_filter(config, tmp_path):
         result = export_tree(config, store, dest, mode="copy", licences=["CC0"])
     # both CC0 images (one identity, one wardrobe) publish; the PD one is filtered out
     assert result.published == 2
-    files = list((dest / "identity" / "Albert_Einstein").glob("*"))
+    files = list((dest / "identity" / "Albert_Einstein").glob("*.jpg"))
     assert len(files) == 1
     assert not files[0].is_symlink()  # real copy
 
@@ -58,3 +58,38 @@ def test_export_category_filter(config, tmp_path):
     assert result.published == 1
     assert not (dest / "identity").exists()
     assert (dest / "wardrobe" / "Red_dress").is_dir()
+
+
+def test_export_writes_a_provenance_sidecar_per_file(config, tmp_path):
+    import json
+
+    from argus_quarry.export import PROVENANCE_SUFFIX
+
+    _land_two(config)
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        export_tree(config, store, dest, mode="symlink", category="wardrobe")
+        (row,) = store.iter_photographs(category="wardrobe")
+    (img,) = [p for p in (dest / "wardrobe" / "Red_dress").iterdir() if not p.name.endswith(PROVENANCE_SUFFIX)]
+    meta = json.loads((img.parent / (img.name + PROVENANCE_SUFFIX)).read_text())
+    assert meta["licence"] == "CC0" and meta["source_url"] == row.source_url
+    assert meta["remote_url"] == "https://img/dress.jpg" and meta["sha256"] == row.sha256
+    assert meta["attribution"] == "Someone"
+
+
+def test_export_refuses_a_row_whose_path_climbs_out(config, tmp_path):
+    import shutil
+
+    _land_two(config)
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        (row,) = store.iter_photographs(category="wardrobe")
+        store._conn.execute("UPDATE photographs SET category = '../../escape' WHERE id = ?", (row.id,))
+        store._conn.commit()
+        # Make the escaped source exist too, so only the path check can stop it.
+        escaped_src = config.images_dir / "../../escape" / row.subject / row.filename
+        escaped_src.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(config.images_dir / "wardrobe" / row.subject / row.filename, escaped_src)
+        result = export_tree(config, store, dest, mode="copy", category="../../escape")
+    assert result.published == 0 and result.skipped == 1
+    assert not (dest / "../../escape").exists()

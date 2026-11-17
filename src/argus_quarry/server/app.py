@@ -38,8 +38,10 @@ from __future__ import annotations
 
 import asyncio
 import io
+import ipaddress
 import json
 import os
+import socket
 import sqlite3
 import threading
 from collections import OrderedDict
@@ -54,7 +56,7 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError("Server requires: pip install argus-quarry[server]") from exc
 
 import structlog
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 
 from argus_quarry import __version__
@@ -343,10 +345,9 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"unknown photo id: {id}")
         # Pooled-file path, computed the same way export/verify do.
         target = config.images_dir / ph.category / ph.subject / ph.filename
-        if not target.is_file():
-            raise HTTPException(status_code=404, detail=f"file missing for photo {id}: {ph.filename}")
 
         def _render() -> bytes:
+            # Opened in the worker thread: a hung $QUARRY_HOME mount must not stall the event loop.
             with Image.open(target) as img:
                 img = img.convert("RGB")
                 img.thumbnail((size, size))
@@ -356,8 +357,15 @@ def create_app(
 
         try:
             data = await asyncio.to_thread(_render)
+        except (FileNotFoundError, IsADirectoryError, NotADirectoryError) as exc:
+            raise HTTPException(status_code=404, detail=f"file missing for photo {id}: {ph.filename}") from exc
+        except UnidentifiedImageError as exc:
+            # PIL's messages carry the pool path: log it, never send it.
+            logger.warning("thumb_undecodable", photo_id=id, error=str(exc))
+            raise HTTPException(status_code=422, detail=f"cannot decode photo {id}") from exc
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"cannot render thumb: {exc}") from exc
+            logger.error("thumb_failed", photo_id=id, error=str(exc))
+            raise HTTPException(status_code=500, detail=f"cannot render thumb for photo {id}") from exc
         return Response(content=data, media_type="image/webp")
 
     _register_archive_routes(app, config, net_factory=net_factory, thumb_fetcher=thumb_fetcher)
@@ -420,22 +428,58 @@ def _archive_query(
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False, include_context=False)) from exc
 
 
-def _fetch_original(config: QuarryConfig, url: str) -> bytes:
-    """GET an archive original for thumbnailing, refusing pathological sizes mid-stream."""
+#: Redirect hops an archive original may take before the thumb fetch gives up.
+ARCHIVE_THUMB_MAX_REDIRECTS = 5
+
+
+class UnsafeURL(ValueError):
+    """An archive URL (or a redirect) that points somewhere the server must not fetch from."""
+
+
+def _check_public_url(url: str) -> None:
+    """Refuse non-http(s) URLs and hosts resolving to private, loopback, link-local or reserved IPs.
+
+    Archive URLs come from third-party metadata, and the server fetches them from inside
+    the deployment: every hop is checked, so a redirect can't reach 169.254.169.254 or localhost.
+    """
+    import httpx
+
+    parsed = httpx.URL(url)
+    if parsed.scheme not in ("http", "https") or not parsed.host:
+        raise UnsafeURL(f"refusing to fetch a {parsed.scheme or 'relative'} URL")
+    try:
+        infos = socket.getaddrinfo(parsed.host, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror as exc:
+        raise UnsafeURL(f"cannot resolve {parsed.host}") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if not ip.is_global or ip.is_multicast:
+            raise UnsafeURL(f"refusing to fetch from a non-public address ({parsed.host})")
+
+
+def _fetch_original(config: QuarryConfig, url: str, *, transport=None) -> bytes:  # noqa: ANN001
+    """GET an archive original for thumbnailing, refusing pathological sizes mid-stream.
+
+    Redirects are followed by hand so each hop is checked by :func:`_check_public_url`.
+    """
     import httpx
 
     headers = {"User-Agent": config.user_agent}
-    with (
-        httpx.Client(headers=headers, timeout=30, follow_redirects=True) as client,
-        client.stream("GET", url) as resp,
-    ):
-        resp.raise_for_status()
-        buf = io.BytesIO()
-        for chunk in resp.iter_bytes(65536):
-            buf.write(chunk)
-            if buf.tell() > ARCHIVE_THUMB_MAX_BYTES:
-                raise ValueError("original too large to thumbnail")
-    return buf.getvalue()
+    with httpx.Client(headers=headers, timeout=30, follow_redirects=False, transport=transport) as client:
+        for _hop in range(ARCHIVE_THUMB_MAX_REDIRECTS + 1):
+            _check_public_url(url)
+            with client.stream("GET", url) as resp:
+                if resp.is_redirect and resp.headers.get("location"):
+                    url = str(resp.url.join(resp.headers["location"]))
+                    continue
+                resp.raise_for_status()
+                buf = io.BytesIO()
+                for chunk in resp.iter_bytes(65536):
+                    buf.write(chunk)
+                    if buf.tell() > ARCHIVE_THUMB_MAX_BYTES:
+                        raise ValueError("original too large to thumbnail")
+                return buf.getvalue()
+    raise UnsafeURL(f"more than {ARCHIVE_THUMB_MAX_REDIRECTS} redirects")
 
 
 def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=None, thumb_fetcher=None) -> None:  # noqa: ANN001
@@ -579,11 +623,14 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
             loop.call_soon_threadsafe(frames.put_nowait, frame)
 
         def work() -> None:
-            from argus_quarry.ingest import BudgetReached, FetchSummary, IngestEngine
-            from argus_quarry.net import NetClient
-
-            summary = FetchSummary()
+            # Everything, imports included, sits inside the try: this thread owns fetch_lock and
+            # the stream's end-of-frames sentinel, so no failure may skip the finally.
+            summary = None
             try:
+                from argus_quarry.ingest import BudgetReached, FetchSummary, IngestEngine
+                from argus_quarry.net import NetClient
+
+                summary = FetchSummary()
                 emit({"type": "start", "total": total, "category": spec.category, "subject": spec.subject})
                 net = net_factory(config) if net_factory else NetClient(config)
                 with closing(net), ProvenanceStore(config.db_path) as store:
@@ -609,7 +656,7 @@ def _register_archive_routes(app: FastAPI, config: QuarryConfig, *, net_factory=
                 emit({"type": "done", "summary": summary.__dict__})
             except Exception as exc:  # report, never 500 mid-stream
                 logger.error("archive_fetch_failed", archive=name, error=str(exc))
-                emit({"type": "error", "message": str(exc), "summary": summary.__dict__})
+                emit({"type": "error", "message": str(exc), "summary": summary.__dict__ if summary else None})
             finally:
                 fetch_lock.release()
                 emit(None)

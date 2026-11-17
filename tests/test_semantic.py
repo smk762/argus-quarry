@@ -258,6 +258,50 @@ def test_stale_pointer_reads_as_not_indexed(built):
     assert get_archive("pd12m", built).status()["semantic"]["indexed"] is False
 
 
+@pytest.mark.parametrize("bad", [1, ["x"], {"a": 1}, "/", "..", "../pd12m", "a/b"])
+def test_pointer_dir_must_be_one_build_dir_under_root(built, bad):
+    pointer = built.archive_index_dir / "pd12m.semantic.json"
+    meta = json.loads(pointer.read_text())
+    pointer.write_text(json.dumps({**meta, "dir": bad}))
+    assert sem.read_pointer(built.archive_index_dir, "pd12m") is None
+
+
+def test_search_leaves_the_callers_mask_alone(built):
+    index = sem.load_vector_index(built.archive_index_dir, "pd12m")
+    allowed = np.ones(N, dtype=bool)
+    hits = index.search(index.vector(DUP_OF), 3, allowed=allowed, exclude=DUP_OF)
+    assert DUP_OF not in [h.pos for h in hits]
+    assert allowed.all()
+
+
+def test_read_rows_of_an_empty_range_is_an_empty_matrix(pd12m_root):
+    files = sorted((pd12m_root / "embeddings" / "embeddings").glob("*.npy"))
+    sources, dim = sem._open_sources(files)
+    starts = [0, NPY_SPLIT[0]]
+    for lo, hi in ((N, N), (N + 5, N + 10), (10, 10)):
+        assert sem._read_rows(sources, starts, lo, hi).shape == (0, dim)
+
+
+def test_build_cleanup_keeps_the_build_a_concurrent_publish_pointed_at(built, monkeypatch):
+    import os
+
+    root = built.archive_index_dir
+    pointer = root / "pd12m.semantic.json"
+    other = root / "pd12m.semantic.concurrent"
+    real_replace = os.replace
+
+    def racing_replace(src, dst):
+        real_replace(src, dst)
+        if Path(dst) == pointer and not other.exists():  # another build publishes right after us
+            other.mkdir()
+            pointer.write_text(json.dumps({**json.loads(pointer.read_text()), "dir": other.name}))
+
+    monkeypatch.setattr(sem.os, "replace", racing_replace)
+    get_archive("pd12m", built).build_embeddings()
+    assert other.is_dir()  # the live pointer's target survived the cleanup
+    assert sem.read_pointer(root, "pd12m")["dir"] == other.name
+
+
 # ── server ───────────────────────────────────────────────────────────────
 pytest.importorskip("fastapi", reason="server extra not installed")
 from fastapi.testclient import TestClient  # noqa: E402

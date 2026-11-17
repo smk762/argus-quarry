@@ -36,7 +36,7 @@ from importlib import metadata
 from pathlib import Path
 
 import yaml
-from PIL import Image
+from PIL import Image, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -155,15 +155,32 @@ def _now() -> str:
 def _thumb(src: Path, dest: Path) -> dict:
     dest.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(src) as im:
-        im = im.convert("RGB")
+        im = ImageOps.exif_transpose(im).convert("RGB")  # as displayed, not as stored
         im.thumbnail((THUMB_PX, THUMB_PX), Image.LANCZOS)
         im.save(dest, "WEBP", quality=78, method=6)
         return {"width": im.width, "height": im.height}
 
 
+def _subjects_label(path: Path) -> str:
+    """The subjects file as run.json names it: repo-relative when it is in the repo."""
+    resolved = path.resolve()
+    return str(resolved.relative_to(ROOT)) if resolved.is_relative_to(ROOT) else str(path)
+
+
+def _search_entries(downloader: ObservedCommons, subject: Subject) -> list[dict]:
+    """Drain the downloader's pending search skips, tagged with the subject they came from."""
+    entries = []
+    for skipped in downloader.skipped:
+        entries.append({"stage": "search", "subject": subject.folder, "category": subject.category, **skipped})
+        print(f"  search-skip {skipped['mime']}: {skipped['title']}", flush=True)
+    downloader.skipped.clear()
+    return entries
+
+
 def record(args: argparse.Namespace) -> None:
     cache: Path = args.cache.expanduser().resolve()
     home = cache / "home"
+    subjects_file = _subjects_label(args.subjects)  # before the run, so it can't fail after it
     if home.exists():
         if not args.fresh:
             raise SystemExit(f"record: a pool already exists in {cache}/home; pass --fresh to start over")
@@ -184,20 +201,17 @@ def record(args: argparse.Namespace) -> None:
     with ProvenanceStore(config.db_path) as store, NetClient(config) as net:
         engine = ObservedEngine(config, store, net)
         downloader = ObservedCommons(config, net)
+        budget_hit = False
         for subject in subjects:
             print(f"== {subject.category}/{subject.folder}: {subject.query!r}", flush=True)
             for rec in downloader.harvest(subject, args.limit):
-                for skipped in downloader.skipped:
-                    entries.append(
-                        {"stage": "search", "subject": subject.folder, "category": subject.category, **skipped}
-                    )
-                    print(f"  search-skip {skipped['mime']}: {skipped['title']}", flush=True)
-                downloader.skipped.clear()
+                entries.extend(_search_entries(downloader, subject))
                 engine.original = None
                 try:
                     outcome = engine.ingest_record(rec)
                 except BudgetReached:
                     print("budget reached; stopping", flush=True)
+                    budget_hit = True
                     break
                 row = store.get_by_remote_url(rec.remote_url)
                 entry = {
@@ -237,14 +251,22 @@ def record(args: argparse.Namespace) -> None:
                     entry["thumb"] = _thumb(pool_file, cache / "thumbs" / f"{row.sha256[:16]}.webp")
                 entries.append(entry)
                 print(f"  {outcome.status:11} {rec.licence[:20]:20} {rec.title}", flush=True)
+            # Skips seen after this subject's last record (or with no record at all) are still its own.
+            entries.extend(_search_entries(downloader, subject))
+            if budget_hit:
+                break
 
         # A rerun of the same harvest over the same pool: everything already recorded is skipped.
+        # Candidates the budget cut off were never recorded, so the rerun would hit it again.
         print("== rerun", flush=True)
         again = ObservedEngine(config, store, net)
-        for subject in subjects:
-            for rec in ObservedCommons(config, net).harvest(subject, args.limit):
-                status = again.ingest_record(rec).status
-                rerun[status] = rerun.get(status, 0) + 1
+        try:
+            for subject in subjects:
+                for rec in ObservedCommons(config, net).harvest(subject, args.limit):
+                    status = again.ingest_record(rec).status
+                    rerun[status] = rerun.get(status, 0) + 1
+        except BudgetReached:
+            rerun["budget_reached"] = rerun.get("budget_reached", 0) + 1
         print(f"  {rerun}", flush=True)
 
     run = {
@@ -263,7 +285,7 @@ def record(args: argparse.Namespace) -> None:
             "max_total_gb": round(config.max_total_bytes / 1024**3, 2),
             "thumb_px": THUMB_PX,
         },
-        "subjects_file": str(args.subjects.resolve().relative_to(ROOT)),
+        "subjects_file": subjects_file,
         "subjects": [
             s.model_dump(include={"name", "category", "search", "aliases"}) | {"folder": s.folder} for s in subjects
         ],
@@ -275,12 +297,25 @@ def record(args: argparse.Namespace) -> None:
     print(f"wrote {cache / 'run.json'}: {len(entries)} entries")
 
 
+def _check_out(out: Path, cache: Path) -> Path:
+    """Resolve ``--out`` and refuse a directory whose wiping would lose something else."""
+    out = out.expanduser().resolve()
+    cache = cache.expanduser().resolve()
+    protected = {Path.cwd().resolve(), Path.home().resolve(), ROOT, Path(out.anchor)}
+    if out in protected or cache.is_relative_to(out):
+        raise SystemExit(f"build: refusing to replace {out}: it is or holds the cache, cwd, home or repo")
+    if out.exists() and any(out.iterdir()) and not (out / "tape.json").exists():
+        raise SystemExit(f"build: refusing to replace {out}: not empty and holds no tape.json")
+    return out
+
+
 def build(args: argparse.Namespace) -> None:
     cache: Path = args.cache.expanduser().resolve()
+    out = _check_out(args.out, cache)
     run = json.loads((cache / "run.json").read_text(encoding="utf-8"))
     tape, files = demo_tape.build_tape(run)
-    out: Path = args.out
-    shutil.rmtree(out, ignore_errors=True)
+    if out.exists():
+        shutil.rmtree(out)
     (out / "thumbs").mkdir(parents=True)
     for record_id, thumb in files.items():
         shutil.copyfile(cache / "thumbs" / thumb, out / "thumbs" / f"{record_id}.webp")

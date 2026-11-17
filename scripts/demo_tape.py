@@ -257,6 +257,9 @@ def check_tape(tape: dict, files: dict[str, str]) -> None:
         has_image = record["image"] is not None or record["id"] in files
         if has_image and not (record["verdict"] == "landed" and record["licence"]["normalised"] in ACCEPTED):
             raise TapeError(f"{record['id']} is {record['verdict']} ({record['licence']['raw']}) but has an image")
+    orphans = set(files) - {record["id"] for record in tape["records"]}
+    if orphans:
+        raise TapeError(f"images with no record on the tape: {', '.join(sorted(orphans))}")
     found = leaks(json.dumps(tape, ensure_ascii=False))
     if found:
         raise TapeError("the tape would publish: " + "; ".join(found))

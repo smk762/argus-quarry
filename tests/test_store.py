@@ -70,6 +70,58 @@ def test_stats_and_counts(config):
         assert s["by_category"] == {"identity": 2, "wardrobe": 1}
 
 
+def _legacy_pool(config, filenames=("legacy.jpg",)):
+    """A pre-0.2 DB (`people`, `person_id`, no category) plus its flat-layout image files."""
+    config.db_path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(config.db_path))
+    con.executescript(
+        """
+        CREATE TABLE people (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+            wikidata_id TEXT, birth_year INTEGER, death_year INTEGER, occupation TEXT);
+        CREATE TABLE photographs (id INTEGER PRIMARY KEY AUTOINCREMENT, person_id INTEGER NOT NULL,
+            source TEXT, source_url TEXT, licence TEXT, remote_url TEXT NOT NULL,
+            file_size INTEGER, filename TEXT, sha256 TEXT, status TEXT NOT NULL DEFAULT 'complete');
+        INSERT INTO people (id, name) VALUES (1, 'Albert_Einstein');
+        """
+    )
+    for i, name in enumerate(filenames):
+        con.execute(
+            "INSERT INTO photographs (person_id, source, source_url, licence, remote_url, file_size, filename, sha256)"
+            " VALUES (1, 'commons', 'https://x', 'PD', ?, 10, ?, ?)",
+            (f"https://img/{name}", name, f"hash{i}"),
+        )
+        flat = config.images_dir / "Albert_Einstein" / name
+        flat.parent.mkdir(parents=True, exist_ok=True)
+        flat.write_bytes(b"x" * 10)
+    con.commit()
+    con.close()
+
+
+def test_an_interrupted_legacy_relocation_finishes_on_the_next_open(config, monkeypatch):
+    from pathlib import Path
+
+    _legacy_pool(config, ("a.jpg", "b.jpg"))
+    real_replace = Path.replace
+    calls = {"n": 0}
+
+    def flaky_replace(self, target):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("cross-device link")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    with pytest.raises(OSError):
+        ProvenanceStore(config.db_path)
+    monkeypatch.setattr(Path, "replace", real_replace)
+
+    with ProvenanceStore(config.db_path):
+        pass
+    for name in ("a.jpg", "b.jpg"):
+        assert (config.images_dir / "identity" / "Albert_Einstein" / name).exists()
+        assert not (config.images_dir / "Albert_Einstein" / name).exists()
+
+
 def test_migrates_legacy_people_schema(config):
     # Simulate a pre-0.2 DB: `people` table + `photographs.person_id`, no category.
     db_path = config.db_path

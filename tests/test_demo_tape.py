@@ -142,6 +142,12 @@ def test_check_tape_refuses_an_image_on_a_non_cleared_record():
         demo_tape.check_tape(tape, {tape["records"][0]["id"]: "x.webp"})
 
 
+def test_check_tape_refuses_an_image_with_no_record():
+    tape, files = demo_tape.build_tape(_run([_entry("pd.jpg", "Public domain", "complete")]))
+    with pytest.raises(demo_tape.TapeError, match="no record"):
+        demo_tape.check_tape(tape, {**files, "stale-id": "x.webp"})
+
+
 def test_identity_subjects_and_entries_are_refused():
     identity = [{"name": "Someone", "folder": "Someone", "category": "identity", "search": None}]
     with pytest.raises(demo_tape.TapeError, match="identity"):

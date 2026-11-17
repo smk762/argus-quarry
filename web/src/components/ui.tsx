@@ -54,9 +54,22 @@ export function Kv({ label, children, mono = false }: { label: string; children:
 
 export const LINK = "text-interactive underline decoration-interactive/40 underline-offset-2 hover:decoration-interactive";
 
+/** `href` if it is an absolute http(s) URL, else `null`: tape URLs come from third-party metadata,
+ * and a `javascript:` or `data:` link would run script in this origin. */
+export function safeHref(href: string): string | null {
+  try {
+    const url = new URL(href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Ext({ href, children, className = "" }: { href: string; children: ReactNode; className?: string }) {
+  const safe = safeHref(href);
+  if (safe === null) return <span className={className}>{children}</span>;
   return (
-    <a href={href} className={`${LINK} ${className}`} rel="noopener noreferrer">
+    <a href={safe} className={`${LINK} ${className}`} rel="noopener noreferrer">
       {children}
     </a>
   );

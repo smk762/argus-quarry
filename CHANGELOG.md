@@ -6,12 +6,27 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Added
 
+- `export` writes a `<file>.provenance.json` sidecar beside each published file (licence, source and landing URLs, attribution, photographer, year, SHA256), so the published tree carries its provenance. The sidecar is written first: a photo whose provenance can't be written is not published.
 - **Hosted demo** at [quarry.dragonhound.dev](https://quarry.dragonhound.dev): a static replay of one real Commons run (four subjects, 100 candidates: 89 landed, 11 quarantined) with each candidate's licence, verdict, reason and provenance, filterable by verdict, category and subject. `scripts/record_tape.py` records it, `web/` shows it, and `make pages` builds `web/out/`. Only landed PD/CC0 files are shown as images. Quarry itself stays CLI-only (DESIGN.md §9).
 
 ### Fixed
 
 - README: the example host paths are placeholders now (`<ARCHIVE_ROOT>`)
 - Ingest refuses a record whose category, subject or source isn't a single path component (a `/`, `\`, `..` or NUL), before it downloads or writes a DB row. Those name the landing folder, pool filename and cache file, so `subject="../../x"` could land a file outside `images/`. Slice specs and seed subjects were already slugified; this guards every other `SourceRecord`.
+
+- Licence labels match whole tokens only, and a negated or qualified label ("Not CC0", "formerly CC0, now CC BY-NC", "public domain status unknown") is quarantined rather than accepted. Before, `pd` matched inside words, so "CC BY-SA, updated 2020" was accepted as PD.
+- Resumed downloads can no longer splice two different files together. A partial resumes only with its recorded ETag / Last-Modified sent as `If-Range`, and only when the `206` starts at the partial's length. A `.part` that was complete when the process died is finished on the server's `416` instead of failing forever. A gone or over-cap download leaves no partial in the cache.
+- `verify --repair` marks SHA256-mismatched rows failed (it only counted them), and `verify` exits 1 when it finds a problem it didn't repair.
+- `export` skips a row whose category, subject or filename would resolve outside `images/` or the destination.
+- A legacy pool whose flat-layout file relocation failed part-way finishes it on the next read-write open (`PRAGMA user_version` marks it pending); before, the remaining files were stranded.
+- Seed entries with `category: null` inherit the file's category instead of failing validation.
+- Server: the archive thumb fetch follows redirects by hand and refuses any hop to a non-http(s) URL or a private, loopback, link-local or reserved address (SSRF). A fetch worker that fails before ingesting releases the fetch lock and ends its stream (before, every later fetch returned 409). `/thumb` touches the pool only in a worker thread, and answers an undecodable file with a 422 that doesn't include its path.
+- Megalith mirror index: PAX / GNU long-name headers over 1 MiB and negative sizes are refused (GNU base-256 negatives decode as negative). Member keys a TSV row can't hold are skipped instead of breaking the whole lookup build. `consolidate` never stamps offsets scanned at another (or an unrecorded) revision with the current one, and `build` rescans them.
+- Semantic index: concurrent builds of one archive serialise their publish and cleanup, so a build no longer deletes the directory the pointer now names. A pointer's `dir` must be one directory directly under the index root. `search` no longer writes into the caller's `allowed` mask, and an empty row range reads as an empty matrix.
+- `get_archive` reports a `KeyError` raised inside an archive's constructor as itself, not as "unknown archive".
+- `scripts/fetch_public_domain_metadata.py` writes `SOURCE.json` atomically under a lock, and refuses a `--root` on the root filesystem (an unmounted NAS) unless given `--allow-root-fs`.
+- `scripts/record_tape.py`: the budget stops the whole recording, and the rerun survives it. Search skips are filed under their own subject. Thumbnails honour EXIF orientation. `build` refuses an `--out` that is or holds the cache, cwd, home or repo. `scripts/demo_tape.py` refuses image files with no record.
+- Demo site: `Ext` links only `http(s)` URLs and renders anything else as text.
 
 ### Changed
 

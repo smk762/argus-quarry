@@ -235,13 +235,72 @@ def test_thumb_404(client, seeded):
 OPT_IN_WRITE_ROUTES = {"/archives/{name}/fetch": {"POST"}}
 
 
-def test_no_mutation_endpoints(client):
-    routes = {getattr(r, "path", None): getattr(r, "methods", set()) for r in client.app.routes}
-    for path, methods in routes.items():
-        if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"} or methods is None:
+def _unexpected_methods(app) -> dict[str, set[str]]:
+    """Per path, the methods beyond GET/HEAD (and the opt-in allow-list) any route exposes.
+
+    Merged across every route object: FastAPI registers a GET and a POST on one path as
+    two routes, so keying by path alone would let one hide the other.
+    """
+    exposed: dict[str, set[str]] = {}
+    for r in app.routes:
+        path, methods = getattr(r, "path", None), getattr(r, "methods", None)
+        if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"} or not methods:
             continue
-        allowed = {"GET", "HEAD"} | OPT_IN_WRITE_ROUTES.get(path, set())
-        assert methods <= allowed, f"{path} exposes {methods}"
+        exposed.setdefault(path, set()).update(methods)
+    return {
+        path: extra
+        for path, methods in exposed.items()
+        if (extra := methods - {"GET", "HEAD"} - OPT_IN_WRITE_ROUTES.get(path, set()))
+    }
+
+
+def test_no_mutation_endpoints(client):
+    assert _unexpected_methods(client.app) == {}
+
+
+def test_mutation_check_sees_a_write_route_sharing_a_read_routes_path():
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.post("/photos/{photo_id}")(lambda photo_id: None)  # the write route registered first...
+    app.get("/photos/{photo_id}")(lambda photo_id: None)  # ...then a read route on the same path
+    assert _unexpected_methods(app) == {"/photos/{photo_id}": {"POST"}}
+
+
+def test_thumb_of_an_undecodable_file_is_422_without_a_path(client, seeded, config):
+    (config.images_dir / "identity" / "Albert_Einstein" / "a.jpg").write_bytes(b"not an image")
+    resp = client.get("/thumb", params={"id": seeded["with_file"]})
+    assert resp.status_code == 422
+    assert str(config.home) not in resp.text and "a.jpg" not in resp.json()["detail"]
+
+
+def test_thumb_touches_the_filesystem_off_the_event_loop(client, seeded, monkeypatch):
+    import asyncio
+    from pathlib import Path
+
+    on_loop: list[str] = []
+    real_is_file, real_exists = Path.is_file, Path.exists
+
+    def _note(path) -> None:
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(str(path))
+        except RuntimeError:  # a worker thread: fine
+            pass
+
+    def is_file(self):
+        _note(self)
+        return real_is_file(self)
+
+    def exists(self, *a, **k):
+        _note(self)
+        return real_exists(self, *a, **k)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+    monkeypatch.setattr(Path, "exists", exists)
+    assert client.get("/thumb", params={"id": seeded["with_file"], "size": 64}).status_code == 200
+    assert client.get("/thumb", params={"id": seeded["no_file"]}).status_code == 404
+    assert [p for p in on_loop if "images" in p] == []
 
 
 def _pool_fingerprint(home) -> dict[str, tuple]:
