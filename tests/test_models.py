@@ -23,6 +23,18 @@ from argus_quarry.models import (
         ("PD-Art (PD-old-100)", "PD"),
         ("No known copyright restrictions", "PD"),
         ("CC BY-SA 4.0", None),
+        ("https://creativecommons.org/publicdomain/mark/1.0/", "PD"),
+        ("public domain or equivalent (Megalith-10m filter: Flickr PDM / CC-zero / Flickr Commons / US Gov)", "PD"),
+        # negated / qualified labels name a free licence without granting it
+        ("Not CC0", None),
+        ("non-cc0", None),
+        ("CC0 not applicable", None),
+        ("formerly CC0, now CC BY-NC", None),
+        ("not public domain in the US", None),
+        ("public domain status unknown", None),
+        # tokens match whole words only: "pd" is not in "updated"
+        ("CC BY-SA, updated 2020", None),
+        ("Proprietary (rpd licence)", None),
         ("All rights reserved", None),
         ("", None),
         (None, None),
