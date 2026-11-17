@@ -11,6 +11,7 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 ### Fixed
 
 - README: the example host paths are placeholders now (`<ARCHIVE_ROOT>`)
+- Ingest refuses a record whose category, subject or source isn't a single path component (a `/`, `\`, `..` or NUL), before it downloads or writes a DB row. Those name the landing folder, pool filename and cache file, so `subject="../../x"` could land a file outside `images/`. Slice specs and seed subjects were already slugified; this guards every other `SourceRecord`.
 
 ### Changed
 
