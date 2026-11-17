@@ -260,10 +260,11 @@ Each source module must:
 - **Prefer high resolution within a configurable cap** (Q3): request the largest
   rendition the API offers, but downscale past a per-file ceiling
   (`QuarryConfig.max_megapixels`, default 12 MP, env `QUARRY_MAX_MEGAPIXELS`).
-  *As built, only the megapixel cap is enforced*: `max_file_bytes` exists in
-  `QuarryConfig` but ingest does not pass it to the downloader, since a byte cap
-  on the download would reject large originals that the megapixel cap can
-  downscale instead. The **full-resolution `remote_url` is always kept in
+  A separate per-download ceiling (`QuarryConfig.max_file_bytes`, default 100 MiB,
+  env `QUARRY_MAX_FILE_MB`, `0` = unlimited) aborts a runaway stream. It sits well
+  above ordinary originals, which the megapixel cap downscales instead; an
+  over-cap row is recorded `oversize` (with the bytes seen) and skipped on reruns
+  until the cap is raised past that size. The **full-resolution `remote_url` is always kept in
   the DB**, so a capped image can be re-fetched at original size on demand
   without losing provenance. Keeps the archive inside the 20–40 GB budget by
   default while never throwing away the ability to go bigger.
@@ -321,6 +322,7 @@ docker compose --profile curator up --build       # then curate the published vi
 
 New `.env` knobs (documented in `.env.example`): `QUARRY_HOME` (default
 `./quarry`), `QUARRY_MAX_GB` (total raw-pool ceiling, default `40`, `0` =
+unlimited), `QUARRY_MAX_FILE_MB` (per-download ceiling, default `100`, `0` =
 unlimited), per-source API keys / contact `User-Agent` strings (Commons and LoC
 want a real UA; Rijksmuseum and Europeana need API keys).
 

@@ -397,6 +397,16 @@ class ProvenanceStore:
         self._conn.execute("UPDATE photographs SET status = ? WHERE id = ?", (status, photo_id))
         self._conn.commit()
 
+    def mark_oversize(self, photo_id: int, seen_bytes: int) -> None:
+        """Record a download aborted past ``max_file_bytes``. ``file_size`` holds the bytes seen, a lower bound.
+
+        Nothing landed, so the row counts toward no budget (``total_bytes`` sums complete rows only).
+        """
+        self._conn.execute(
+            "UPDATE photographs SET status = 'oversize', file_size = ? WHERE id = ?", (seen_bytes, photo_id)
+        )
+        self._conn.commit()
+
     def mark_complete(
         self,
         photo_id: int,

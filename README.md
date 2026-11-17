@@ -195,6 +195,7 @@ Copy `.env.example` to `.env`. Key knobs:
 |---|---|---|
 | `QUARRY_HOME` | `./quarry` | Raw pool + DB + cache + logs (side-car dir) |
 | `QUARRY_MAX_GB` | `40` | Total raw-pool ceiling; `0` = unlimited |
+| `QUARRY_MAX_FILE_MB` | `100` | Per-download ceiling; a larger file is aborted and recorded `oversize` (skipped on reruns until raised); `0` = unlimited |
 | `QUARRY_MAX_MEGAPIXELS` | `12` | Per-file resolution cap; larger images are downscaled on landing |
 | `COMMONS_USER_AGENT` | descriptive default | Polite UA (Commons/LoC expect one) |
 | `QUARRY_USER_AGENT` | _(unset)_ | Fallback UA, used when `COMMONS_USER_AGENT` is unset |

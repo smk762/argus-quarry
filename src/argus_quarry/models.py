@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator
 # Ingest lifecycle for a photograph row. ``pending``/``downloading`` support
 # resumability; ``duplicate``/``quarantined`` record *why* a candidate did not
 # land so reruns skip it cheaply instead of re-fetching.
-PhotoStatus = ("pending", "downloading", "complete", "failed", "duplicate", "quarantined")
+PhotoStatus = ("pending", "downloading", "complete", "failed", "duplicate", "quarantined", "oversize")
 
 # Subject categories, aligned with the suite's LoRA-training taxonomy
 # (argus-curator ``TargetCategory``). ``identity`` is people/portraits; the rest

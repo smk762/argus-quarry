@@ -35,7 +35,7 @@ class BudgetReached(Exception):
 
 @dataclass
 class IngestOutcome:
-    status: str  # complete | skipped | duplicate | quarantined | failed
+    status: str  # complete | skipped | duplicate | quarantined | oversize | failed
     photo_id: int | None = None
     filename: str | None = None
     file_size: int = 0
@@ -107,6 +107,11 @@ class IngestEngine:
     def pool_bytes(self) -> int:
         return self._pool_bytes
 
+    def _cap_raised_past(self, seen_bytes: int | None) -> bool:
+        """Whether the per-download cap now admits a file that was aborted after ``seen_bytes``."""
+        cap = self.config.max_file_bytes
+        return cap <= 0 or seen_bytes is None or seen_bytes <= cap
+
     def _budget_would_exceed(self, extra: int) -> bool:
         cap = self.config.max_total_bytes
         return cap > 0 and (self._pool_bytes + extra) > cap
@@ -117,6 +122,9 @@ class IngestEngine:
         existing = self.store.get_by_remote_url(record.remote_url)
         if existing and existing.status in {"complete", "duplicate", "quarantined"}:
             return IngestOutcome(status="skipped", photo_id=existing.id, reason=existing.status)
+        if existing and existing.status == "oversize" and not self._cap_raised_past(existing.file_size):
+            # Re-downloading up to the same cap would fail the same way; raise it to retry.
+            return IngestOutcome(status="skipped", photo_id=existing.id, reason="oversize")
 
         # Path components come from seed files, slice specs and downloaders: refuse any that would escape
         # the pool before anything is written (DB row included).
@@ -144,11 +152,14 @@ class IngestEngine:
             # One temp file per candidate: a mirror must never resume another host's partial.
             tmp = self.config.cache_dir / f"{record.source}-{hashlib.sha1(url.encode()).hexdigest()}{_ext_for(url)}"
             try:
-                self.net.download(url, tmp, source=rate_source)
-            except SizeCapExceeded:
+                self.net.download(url, tmp, source=rate_source, max_bytes=self.config.max_file_bytes or None)
+            except SizeCapExceeded as exc:
                 _discard_download(tmp)
-                self.store.set_status(photo_id, "failed")
-                return IngestOutcome(status="failed", photo_id=photo_id, reason="size_cap")
+                self.store.mark_oversize(photo_id, exc.size)
+                logger.info("oversize", url=url, seen_bytes=exc.size, cap=self.config.max_file_bytes)
+                return IngestOutcome(
+                    status="oversize", photo_id=photo_id, reason=f"over max_file_bytes={self.config.max_file_bytes}"
+                )
             except RemoteGone as exc:
                 _discard_download(tmp)  # the bytes are gone: a partial of them is never resumable
                 if n < len(candidates):
@@ -315,6 +326,7 @@ class FetchSummary:
     skipped: int = 0
     duplicate: int = 0
     quarantined: int = 0
+    oversize: int = 0
     failed: int = 0
     budget_reached: bool = False
 

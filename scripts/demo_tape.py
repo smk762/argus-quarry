@@ -31,6 +31,7 @@ VERDICTS = {
     "quarantined": "quarantined",
     "duplicate": "duplicate",
     "failed": "failed",
+    "oversize": "failed",  # aborted past max_file_bytes; nothing landed
     "skipped": "skipped",
     "search": "not-jpeg-png",
 }
