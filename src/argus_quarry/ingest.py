@@ -19,7 +19,7 @@ from PIL import Image
 
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import Photograph, SourceRecord, Subject, is_accepted_licence, normalise_licence
-from argus_quarry.net import NetClient, RemoteGone, SizeCapExceeded
+from argus_quarry.net import NetClient, RemoteGone, SizeCapExceeded, part_validator_path
 from argus_quarry.store import ProvenanceStore
 
 logger = structlog.get_logger()
@@ -64,6 +64,13 @@ def _unsafe_path_part(record: SourceRecord, existing: Photograph | None) -> str 
         if not value or value in {".", ".."} or any(c in value for c in "/\\\0"):
             return f"unsafe_{field_name}={value!r}"
     return None
+
+
+def _discard_download(tmp: Path) -> None:
+    """Remove a candidate's temp file and any partial of it (its ``.part`` and resume validator)."""
+    tmp.unlink(missing_ok=True)
+    tmp.with_suffix(tmp.suffix + ".part").unlink(missing_ok=True)
+    part_validator_path(tmp).unlink(missing_ok=True)
 
 
 def _sha256_file(path: Path) -> str:
@@ -139,9 +146,11 @@ class IngestEngine:
             try:
                 self.net.download(url, tmp, source=rate_source)
             except SizeCapExceeded:
+                _discard_download(tmp)
                 self.store.set_status(photo_id, "failed")
                 return IngestOutcome(status="failed", photo_id=photo_id, reason="size_cap")
             except RemoteGone as exc:
+                _discard_download(tmp)  # the bytes are gone: a partial of them is never resumable
                 if n < len(candidates):
                     logger.info("remote_gone_trying_alternate", url=url, status=exc.status, next=candidates[n][0])
                     continue
@@ -149,6 +158,9 @@ class IngestEngine:
                 logger.warning("download_failed", url=url, error=str(exc))
                 return IngestOutcome(status="failed", photo_id=photo_id, reason=str(exc))
             except Exception as exc:
+                # A transient failure keeps its .part: the next attempt resumes it (NetClient only
+                # resumes a partial whose ETag/Last-Modified still matches). The temp file is never kept.
+                tmp.unlink(missing_ok=True)
                 self.store.set_status(photo_id, "failed")
                 logger.warning("download_failed", url=url, error=str(exc))
                 return IngestOutcome(status="failed", photo_id=photo_id, reason=str(exc))

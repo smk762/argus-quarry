@@ -180,3 +180,19 @@ def test_unsafe_path_component_is_refused_before_anything_lands(config, field, v
     home = config.images_dir.parent
     landed = [p for p in home.parent.rglob("*") if p.is_file() and p.suffix in {".jpg", ".png"}]
     assert landed == []
+
+
+@pytest.mark.parametrize("error", ["gone", "size_cap"])
+def test_a_dead_download_leaves_no_partial_in_the_cache(config, error):
+    from argus_quarry.net import RemoteGone, SizeCapExceeded
+
+    class PartialThenFail(FakeNet):
+        def download(self, url, dest, *, source="default", max_bytes=None):
+            dest.with_suffix(dest.suffix + ".part").write_bytes(b"partial")
+            dest.write_bytes(b"stale temp")
+            raise RemoteGone(url, 404) if error == "gone" else SizeCapExceeded(10)
+
+    with ProvenanceStore(config.db_path) as store:
+        out = IngestEngine(config, store, PartialThenFail()).ingest_record(make_record("https://img/x.jpg"))
+    assert out.status == "failed"
+    assert list(config.cache_dir.iterdir()) == []

@@ -126,6 +126,7 @@ class NetClient:
         url, span = split_byte_range(url)
         dest.parent.mkdir(parents=True, exist_ok=True)
         part = dest.with_suffix(dest.suffix + ".part")
+        validator_file = part_validator_path(dest)
         last_exc: Exception | None = None
 
         for attempt in range(self.config.max_retries):
@@ -141,7 +142,13 @@ class NetClient:
                     return DownloadResult(path=dest, size=have, resumed=True)
                 headers = {"Range": f"bytes={first + have}-{last}"}
             else:
-                headers = {"Range": f"bytes={have}-"} if have else {}
+                # Resume only a partial whose identity was recorded: If-Range makes a changed
+                # resource answer 200 (start over) instead of splicing two byte streams together.
+                validator = _read_validator(validator_file) if have else None
+                if have and validator is None:
+                    part.unlink(missing_ok=True)
+                    have = 0
+                headers = {"Range": f"bytes={have}-", "If-Range": validator} if have else {}
             try:
                 with self._client.stream("GET", url, headers=headers) as resp:
                     if resp.status_code in _TRANSIENT_STATUS:
@@ -152,11 +159,29 @@ class NetClient:
                         raise RemoteGone(url, resp.status_code)
                     if span is not None:
                         _check_span(resp, span[0] + have, span[1])
-                    # Server ignored the Range and restarted from 0 -> discard partial.
+                    elif have and resp.status_code == 416:
+                        # Nothing past `have`: the .part is whole if the server's total says so (an
+                        # interrupted rename); otherwise it is not this resource's prefix.
+                        total = re.match(r"bytes \*/(\d+)", resp.headers.get("content-range", ""))
+                        if total and int(total.group(1)) == have:
+                            part.replace(dest)
+                            validator_file.unlink(missing_ok=True)
+                            return DownloadResult(path=dest, size=have, resumed=True)
+                        _discard_part(part, validator_file)
+                        raise httpx.TransportError(f"416 resuming at {have} bytes: restarting from 0")
+                    # Server ignored the Range (or If-Range found a changed resource) -> discard partial.
                     elif have and resp.status_code == 200:
-                        part.unlink(missing_ok=True)
+                        _discard_part(part, validator_file)
                         have = 0
+                    elif have and resp.status_code == 206:
+                        try:
+                            _check_span(resp, have, None)
+                        except httpx.TransportError:
+                            _discard_part(part, validator_file)  # not our offset: never append it
+                            raise
                     resp.raise_for_status()
+                    if not have and span is None:
+                        _write_validator(validator_file, resp)
 
                     mode = "ab" if have else "wb"
                     written = have
@@ -170,9 +195,10 @@ class NetClient:
                 if span is not None and written != span[1] - span[0] + 1:
                     raise httpx.TransportError(f"short range read: {written} of {span[1] - span[0] + 1} bytes")
                 part.replace(dest)
+                validator_file.unlink(missing_ok=True)
                 return DownloadResult(path=dest, size=written, resumed=bool(have))
-            except _SizeCapExceeded:
-                part.unlink(missing_ok=True)
+            except (_SizeCapExceeded, RemoteGone):
+                _discard_part(part, validator_file)  # over the cap, or gone: never worth resuming
                 raise
             except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 last_exc = exc
@@ -278,6 +304,33 @@ def split_byte_range(url: str) -> tuple[str, tuple[int, int] | None]:
     if last < first:
         raise ValueError(f"empty byte range in {url}")
     return url[: m.start()], (first, last)
+
+
+def part_validator_path(dest: Path) -> Path:
+    """Where :meth:`NetClient.download` keeps the ``If-Range`` validator of ``dest``'s ``.part``."""
+    return dest.with_suffix(dest.suffix + ".part.validator")
+
+
+def _write_validator(path: Path, resp: httpx.Response) -> None:
+    """Record a strong ETag (``If-Range`` refuses weak ones) or else Last-Modified, if any."""
+    etag = resp.headers.get("etag")
+    value = etag if etag and not etag.startswith("W/") else resp.headers.get("last-modified")
+    if value:
+        path.write_text(value)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _read_validator(path: Path) -> str | None:
+    try:
+        return path.read_text().strip() or None
+    except OSError:
+        return None
+
+
+def _discard_part(part: Path, validator_file: Path) -> None:
+    part.unlink(missing_ok=True)
+    validator_file.unlink(missing_ok=True)
 
 
 def _check_span(resp: httpx.Response, first: int, last: int | None) -> None:
