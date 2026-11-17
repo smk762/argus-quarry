@@ -44,3 +44,16 @@ def test_load_people_alias_is_identity_only():
 def test_from_wikidata_not_yet_implemented():
     with pytest.raises(NotImplementedError):
         load_subjects(from_wikidata=True)
+
+
+def test_entry_categories_are_normalised_and_null_inherits_the_file_category(tmp_path):
+    seed = tmp_path / "seed.yaml"
+    seed.write_text(
+        "category: Setting\n"
+        "subjects:\n"
+        "  - {name: Lighthouse}\n"
+        "  - {name: Fog, category: null}\n"
+        "  - {name: Red dress, category: ' Wardrobe '}\n"
+    )
+    got = {s.name: s.category for s in load_category("setting", seed)}
+    assert got == {"Lighthouse": "setting", "Fog": "setting", "Red dress": "wardrobe"}

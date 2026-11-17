@@ -25,7 +25,8 @@ def _parse_subjects(data: object, *, fallback_category: str) -> list[Subject]:
     subjects: list[Subject] = []
     for entry in data["subjects"]:
         entry = dict(entry)
-        entry.setdefault("category", file_category)
+        # An entry's own category wins; a missing or blank (``category: null``) one inherits the file's.
+        entry["category"] = normalise_category(entry.get("category") or file_category)
         subjects.append(Subject(**entry))
     return subjects
 
