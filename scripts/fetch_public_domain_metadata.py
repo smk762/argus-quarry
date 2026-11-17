@@ -60,6 +60,21 @@ class Part:
     note: str = ""
 
 
+#: Photos and the shards that hold them. Never fetched, whatever a part's own patterns say: this
+#: script archives metadata only, and photos land one at a time through ingest's licence gate.
+#: huggingface_hub matches with case-sensitive ``fnmatch``, so each extension is listed in both cases.
+NEVER_FETCH: tuple[str, ...] = tuple(
+    f"*.{e}"
+    for ext in ("tar", "jpg", "jpeg", "png", "webp", "gif", "tif", "tiff", "bmp", "avif", "heic")
+    for e in (ext, ext.upper())
+)
+
+
+def ignore_patterns(part: Part) -> list[str]:
+    """What *part* must not fetch: ``.gitattributes``, its own ignores, and every photo or shard."""
+    return [".gitattributes", *(part.ignore or ()), *NEVER_FETCH]
+
+
 SOURCES: dict[str, dict[str, Part]] = {
     "pd12m": {
         "metadata": Part(
@@ -125,7 +140,7 @@ def plan(api, part: Part, token: str | None) -> tuple[str, list[tuple[str, int]]
         filter_repo_objects(
             [f.path for f in tree],
             allow_patterns=list(part.allow) if part.allow else None,
-            ignore_patterns=[".gitattributes", *(part.ignore or ())],
+            ignore_patterns=ignore_patterns(part),
         )
     )
     return info.sha, [(f.path, f.size) for f in tree if f.path in keep]
@@ -259,7 +274,7 @@ def main() -> int:
             revision=sha,
             local_dir=dest,
             allow_patterns=list(part.allow) if part.allow else None,
-            ignore_patterns=[".gitattributes", *(part.ignore or ())],
+            ignore_patterns=ignore_patterns(part),
             max_workers=args.max_workers,
             token=token,
         )

@@ -25,20 +25,9 @@ Not checked out? Read https://github.com/smk762/argus-cortex/blob/main/SUITE.md
 
 ## Layout
 
-`src/argus_quarry/`:
+`src/argus_quarry/`: `models.py` (Pydantic contract + licence helpers), `config.py` (`QuarryConfig`; every path derives from `$QUARRY_HOME`), `store.py` (SQLite provenance DB, migrations, read-only open), `net.py` (polite `httpx`), `downloaders/` (one module per source; register in `__init__.py`), `subjects.py` + `seeds/*.yaml`, `ingest.py` (licence gate → download → verify → cap → dedup → land), `export.py`, `cli.py`, `archives/` (DuckDB-indexed PD12M / Megalith metadata, `semantic.py` CLIP search, `mirror.py` Megalith tar offsets), `server/` (FastAPI on **:8102**). `scripts/fetch_public_domain_metadata.py` archives the datasets' metadata from Hugging Face.
 
-- `models.py` — Pydantic v2 data contract. `Subject` (a thing to harvest) and `SourceRecord` (the source-independent record every downloader yields), plus the licence/category/slug helpers (`normalise_licence`, `is_accepted_licence`, `normalise_category`, `slugify_name`). `Photograph` mirrors the DB row.
-- `config.py` — `QuarryConfig`; all paths derive from `home` (`$QUARRY_HOME`, default `./quarry`). `from_env()` is what the CLI/compose use. Caps: megapixel (downscale on landing) and total-pool budget; `max_file_bytes` is reserved and not enforced.
-- `store.py` — SQLite provenance DB (`subjects` + `photographs`, WAL). Owns migrations, the `sha256 UNIQUE` dedup key, and the read-only open logic (`open_readable`, `ProvenanceUnavailable`).
-- `net.py` — `NetClient`: polite `httpx` with per-source token-bucket rate limits, backoff, and resumable (`Range`) streaming downloads.
-- `downloaders/` — one module per archive over `base.Downloader`, registered in `downloaders/__init__.py` (`commons` is the only Phase-1 source). Add a source here.
-- `subjects.py` + `seeds/*.yaml` — curated per-category seed lists; every source resolves to the same `Subject` shape.
-- `ingest.py` — the per-record pipeline: licence-gate → resume-check → download → verify → cap → SHA256 dedup → land → record. Owns the running byte-budget counter.
-- `export.py` — publish a filtered `<category>/<subject>/` tree into `$DATASET_DIR` (symlink by default, `--copy` optional).
-- `cli.py` — Typer app (`run`, `fetch`, `export`, `list`, `stats`, `verify`, `subjects`, `serve`).
-- `archives/` — searchable local **metadata archives** of large public-domain datasets (`pd12m.py`, `megalith.py` over `base.Archive`; registry in `__init__.py`). `QUARRY_<NAME>_DIR` points at the archived files; `archives index` builds one DuckDB `items` table per archive under `$QUARRY_HOME/cache/archives/` (optional `[archives]` extra). A `SliceSpec` (query + category/subject + limit) becomes a `SourceRecord` stream via `Archive.records()`, so slices land through normal ingest. `semantic.py` adds PD12M's CLIP-embedding search (`semantic` / `similar_to` on `ArchiveQuery`): a FAISS IVF-PQ index + float16 copy built by `archives index --embeddings` (`[embeddings]` extra; text queries need `[search]`, i.e. torch). Hits map back by `items.pos`, the embedding row; keep that column's derivation (sorted-filename concatenation) in step with the embedding file order. `mirror.py` indexes tar-member offsets in Megalith's Drawthings mirror (`archives mirror-index`); Megalith records carry the mirror copy as an `Alternate`.
-- `server/` — FastAPI provenance API on **:8102** (optional `[server]` extra): read-only, plus the `/archives` search routes and one opt-in write (`POST /archives/{name}/fetch`).
-- `scripts/fetch_public_domain_metadata.py` — operator script (PEP 723, `uv run`) that archives PD12M / Megalith metadata from Hugging Face into `<root>/<source>/<part>/` with a `SOURCE.json` of pinned revisions. No photos.
+Facts the code doesn't show: `items.pos` is the PD12M embedding row, derived by concatenating the embedding files in sorted-filename order; keep that derivation in step with the file order or semantic hits map to the wrong items. `max_file_bytes` is reserved and caps nothing (#46); the real caps are megapixels (downscale on landing) and `$QUARRY_MAX_GB`.
 
 ## Commands
 
@@ -51,6 +40,34 @@ make check   # lint + test + build
 ```
 
 Run one test: `uv run --no-sync pytest tests/test_ingest.py::test_name -q`.
+
+## Must never happen
+
+Each rule names the check that fails when it's broken. A new rule gets a check, not just prose here; a rule about code shape (a banned import or API) can go in argus-ci's suite-rules catalogue (smk762/argus-ci#16) instead.
+
+| Must never happen | Enforced by |
+|---|---|
+| A downloader or archive decides licence policy (filters, or imports the gate) | `test_commons::test_commons_reports_a_non_free_licence_instead_of_filtering_it`, `test_commons::test_only_ingest_applies_licence_policy`, `test_ingest::test_non_free_licence_is_quarantined` |
+| A licence label is accepted on a substring, or a negated / qualified label is accepted | `test_models::test_normalise_licence` |
+| Anything but `sha256` dedups; `phash` drives dedup | `test_ingest::test_exact_duplicate_bytes_are_deduped`, `test_ingest::test_a_matching_phash_never_dedups` |
+| A read path mutates the pool, or reads past an un-checkpointed WAL | `test_server::test_read_only_home_with_a_hot_wal_is_unavailable_not_stale`, `test_server::test_legacy_pool_served_read_only_is_unavailable_not_500`, `test_store::test_open_readable_rejects_an_unmigrated_pool` |
+| The server gains a write route other than the opt-in fetch | `test_server::test_no_mutation_endpoints` (`OPT_IN_WRITE_ROUTES`) |
+| A fetch runs without `QUARRY_ALLOW_FETCH=1` | `test_archives::test_fetch_refused_returns_slice_and_command` |
+| Two fetches run at once (the second must get 409) | `test_archives::test_a_second_fetch_while_one_runs_is_409` |
+| CORS grants POST to `*`, or credentials with `*` | `test_archives::test_cors_allows_post_only_when_fetch_is_enabled` |
+| Archive code writes outside `$QUARRY_HOME`, or a reader sees a half-built index | `test_archives::test_archives_write_nothing_outside_quarry_home`, `test_archives::test_rebuild_replaces_index_atomically` |
+| Megalith's licence label reads as CC0 | `test_archives::test_megalith_licence_label_reads_as_pd_never_cc0` |
+| An alternate is tried on anything but `RemoteGone` (unless preferred), or `remote_url` is rewritten | `test_mirror::test_mirror_is_not_tried_when_flickr_fails_for_other_reasons`, `test_mirror::test_deleted_flickr_photo_lands_from_the_mirror`, `test_mirror::test_prefer_mirror_skips_flickr` |
+| A `#bytes=` range accepts a `200` (a whole shard) | `test_mirror::test_ranged_download_refuses_a_server_that_ignores_range` |
+| A resumed download splices two different files | `test_net::test_a_changed_resource_restarts_instead_of_splicing`, `test_net::test_a_206_at_the_wrong_offset_is_never_appended` |
+| A request skips the per-source rate limit or the polite `User-Agent` | `test_net::test_every_request_is_paced_and_carries_the_user_agent` |
+| `fetch_public_domain_metadata.py` downloads a photo or tar shard | `test_fetch_metadata::test_no_part_ever_fetches_a_photo` |
+| `$DATASET_DIR` overlaps `$QUARRY_HOME` | `test_export::test_export_refuses_a_dest_that_overlaps_the_pool` |
+| Export reads outside `images/` or writes outside the dest | `test_export::test_export_refuses_a_row_whose_path_climbs_out` |
+| A photo publishes without its provenance sidecar, or a person photo without `likeness_consent: false` | `test_export::test_export_writes_a_provenance_sidecar_per_file`, `test_export::test_export_marks_a_person_photo_as_not_consented` |
+| The pre-0.2 aliases (`Person`, `PortraitRecord`, `load_people`, `people`) or legacy-pool migration break | `test_models::test_pre_0_2_aliases_stay_importable`, `test_cli::test_people_alias_still_works`, `test_store::test_migrates_legacy_people_schema` |
+| Anything relies on `max_file_bytes` as a cap | **UNENFORCED**: nothing reads it (#46) |
+| A version is hand-edited | `_version.py` is generated by `hatch-vcs` and gitignored |
 
 ## Conventions & gotchas
 

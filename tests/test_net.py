@@ -95,3 +95,23 @@ def test_a_complete_part_whose_rename_was_interrupted_is_finalised(tmp_path):
         result = net.download(URL, dest)
     assert dest.read_bytes() == BODY and result.size == len(BODY)
     assert len(server.requests) == 1  # the 416 finished it: no retries, no re-download
+
+
+def test_every_request_is_paced_and_carries_the_user_agent(tmp_path, monkeypatch):
+    """Politeness can't be bypassed: each request, retries included, takes a token and sends the UA."""
+    cfg = QuarryConfig(home=tmp_path / "q", backoff_base=0.0, max_retries=3)
+    assert NetClient(cfg)._client.headers["User-Agent"] == cfg.user_agent
+
+    taken: list[str] = []
+    seen: list[str] = []
+    flaky = iter([httpx.Response(503), httpx.Response(200, json={"ok": True})])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("user-agent", ""))
+        return next(flaky) if "api" in request.url.host else Server()(request)
+
+    net = NetClient(cfg, client=httpx.Client(transport=httpx.MockTransport(handler), headers={"User-Agent": "ua"}))
+    monkeypatch.setattr(net, "_bucket", lambda source: type("B", (), {"take": lambda _s: taken.append(source)})())
+    assert net.get_json("https://api.test/x", source="commons") == {"ok": True}
+    net.download(URL, tmp_path / "a.jpg", source="commons")
+    assert taken == ["commons"] * len(seen) and len(seen) == 3 and set(seen) == {"ua"}
