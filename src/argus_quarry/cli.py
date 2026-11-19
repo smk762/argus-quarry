@@ -193,9 +193,14 @@ def stats() -> None:
 
 @app.command()
 def verify(
-    repair: bool = Option(False, "--repair", help="Mark rows whose files are missing/corrupt as failed"),
+    repair: bool = Option(
+        False, "--repair", help="Mark rows whose files are missing, corrupt or SHA256-mismatched as failed"
+    ),
 ) -> None:
-    """Verify landed files still exist, decode, and match their recorded SHA256."""
+    """Verify landed files still exist, decode, and match their recorded SHA256.
+
+    Exits 1 when a problem is found and not repaired, so it can gate scripts and CI.
+    """
     import hashlib
 
     from PIL import Image
@@ -231,12 +236,15 @@ def verify(
                     h.update(chunk)
             if ph.sha256 and h.hexdigest() != ph.sha256:
                 mismatch += 1
+                if repair and ph.id:  # the bytes no longer match their provenance: re-fetch them
+                    store.set_status(ph.id, "failed")
             else:
                 ok += 1
 
     typer.echo(f"ok={ok} missing={missing} corrupt={corrupt} sha_mismatch={mismatch}")
     if (missing or corrupt or mismatch) and not repair:
         typer.echo("(run with --repair to mark broken rows as failed for re-fetch)")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -539,6 +547,8 @@ def _print_fetch_summary(summary) -> None:
     typer.echo(f"  skipped:      {summary.skipped}")
     typer.echo(f"  duplicate:    {summary.duplicate}")
     typer.echo(f"  quarantined:  {summary.quarantined}")
+    if summary.oversize:
+        typer.echo(f"  oversize:     {summary.oversize}  (over QUARRY_MAX_FILE_MB; raise it and rerun to retry)")
     typer.echo(f"  failed:       {summary.failed}")
     if summary.budget_reached:
         typer.echo("  ** budget cap reached — run stopped cleanly (rerun to resume) **")
@@ -554,7 +564,11 @@ def _do_export(config, dest: Path | None, *, copy: bool, licences=None, subject=
         dest = Path(os.environ.get("DATASET_DIR", "./data"))
     mode = "copy" if copy else "symlink"
     with _open_reader(config) as store:
-        result = export_tree(config, store, dest, mode=mode, licences=licences, subject=subject, category=category)
+        try:
+            result = export_tree(config, store, dest, mode=mode, licences=licences, subject=subject, category=category)
+        except ValueError as exc:  # dest overlaps the raw pool
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(code=2) from None
     typer.echo(
         f"Published {result.published} image(s) ({mode}) across {len(result.subjects)} "
         f"subject(s) -> {result.dest}  (missing={result.missing}, skipped={result.skipped})"

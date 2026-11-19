@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from conftest import FakeNet, make_image_bytes, make_record
 
 from argus_quarry.ingest import BudgetReached, IngestEngine, fetch
@@ -89,6 +90,21 @@ def test_exact_duplicate_bytes_are_deduped(config):
         assert len(files) == 1
 
 
+def test_a_matching_phash_never_dedups(config, monkeypatch):
+    """phash is informational only: different bytes with the same phash both land (near-dup is curator's)."""
+    import argus_quarry.ingest as ingest
+
+    monkeypatch.setattr(ingest, "_compute_phash", lambda _im: "ffffffffffffffff")
+    a, b = "https://img/a.jpg", "https://img/b.jpg"
+    net = FakeNet(assets={a: make_image_bytes(seed=1), b: make_image_bytes(seed=2)})
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, net)
+        assert engine.ingest_record(make_record(a)).status == "complete"
+        assert engine.ingest_record(make_record(b)).status == "complete"
+        rows = list(store.iter_photographs(status="complete"))
+    assert len(rows) == 2 and {r.phash for r in rows} == {"ffffffffffffffff"}
+
+
 def test_non_identity_lands_under_category_subfolder(config):
     url = "https://img/red_dress.jpg"
     net = FakeNet(assets={url: make_image_bytes(seed=11)})
@@ -154,3 +170,127 @@ def test_budget_reached_raises_when_pool_full(config):
             raise AssertionError("expected BudgetReached")
         except BudgetReached:
             pass
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("subject", "../../escaped"),
+        ("subject", "AC/DC"),
+        ("subject", ".."),
+        ("category", "../outside"),
+        ("category", "a\\b"),
+        ("source", "../../evil"),
+    ],
+)
+def test_unsafe_path_component_is_refused_before_anything_lands(config, field, value):
+    """A category/subject/source that isn't one path component never writes outside the pool (or anywhere)."""
+    url = "https://img/unsafe.jpg"
+    net = FakeNet(assets={url: make_image_bytes(seed=41)})
+    with ProvenanceStore(config.db_path) as store:
+        out = IngestEngine(config, store, net).ingest_record(make_record(url, **{field: value}))
+        assert out.status == "failed" and out.reason.startswith(f"unsafe_{field}=")
+        assert store.get_by_remote_url(url) is None  # no DB row either
+    assert net.downloads == []
+    home = config.images_dir.parent
+    landed = [p for p in home.parent.rglob("*") if p.is_file() and p.suffix in {".jpg", ".png"}]
+    assert landed == []
+
+
+@pytest.mark.parametrize("error", ["gone", "size_cap"])
+def test_a_dead_download_leaves_no_partial_in_the_cache(config, error):
+    from argus_quarry.net import RemoteGone, SizeCapExceeded
+
+    class PartialThenFail(FakeNet):
+        def download(self, url, dest, *, source="default", max_bytes=None):
+            dest.with_suffix(dest.suffix + ".part").write_bytes(b"partial")
+            dest.write_bytes(b"stale temp")
+            raise RemoteGone(url, 404) if error == "gone" else SizeCapExceeded(10)
+
+    with ProvenanceStore(config.db_path) as store:
+        out = IngestEngine(config, store, PartialThenFail()).ingest_record(make_record("https://img/x.jpg"))
+    assert out.status == ("failed" if error == "gone" else "oversize")
+    assert list(config.cache_dir.iterdir()) == []
+
+
+def _real_net(config, assets: dict[str, bytes], hits: list[str]):
+    """A real NetClient over a mock transport, so max_bytes is enforced by the actual stream."""
+    import httpx
+
+    from argus_quarry.net import NetClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hits.append(str(request.url))
+        return httpx.Response(200, content=assets[str(request.url)])
+
+    return NetClient(config, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_a_download_over_max_file_bytes_is_aborted_and_marked_oversize(config):
+    url = "https://img/huge.jpg"
+    data = make_image_bytes(256, seed=5)
+    config.max_file_bytes = len(data) // 2
+    hits: list[str] = []
+    with ProvenanceStore(config.db_path) as store:
+        out = IngestEngine(config, store, _real_net(config, {url: data}, hits)).ingest_record(make_record(url))
+        row = store.get_by_remote_url(url)
+        assert store.total_bytes() == 0  # nothing landed, nothing counted against the budget
+    assert out.status == "oversize" and "max_file_bytes" in out.reason
+    assert row.status == "oversize" and row.file_size > config.max_file_bytes  # bytes seen, a lower bound
+    assert not list(config.images_dir.rglob("*.jpg")) and list(config.cache_dir.iterdir()) == []
+
+
+def test_an_oversize_row_is_skipped_until_the_cap_is_raised(config):
+    url = "https://img/huge.jpg"
+    data = make_image_bytes(256, seed=5)
+    config.max_file_bytes = len(data) // 2
+    hits: list[str] = []
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, _real_net(config, {url: data}, hits))
+        assert engine.ingest_record(make_record(url)).status == "oversize"
+        again = engine.ingest_record(make_record(url))
+        assert again.status == "skipped" and again.reason == "oversize" and len(hits) == 1  # not re-downloaded
+        config.max_file_bytes = len(data) * 2
+        assert engine.ingest_record(make_record(url)).status == "complete"
+
+
+@pytest.mark.parametrize("cap", [0, 10**9])
+def test_a_file_under_the_cap_or_with_no_cap_lands(config, cap):
+    url = "https://img/a.jpg"
+    config.max_file_bytes = cap
+    with ProvenanceStore(config.db_path) as store:
+        out = IngestEngine(config, store, _real_net(config, {url: make_image_bytes(seed=3)}, [])).ingest_record(
+            make_record(url)
+        )
+    assert out.status == "complete"
+
+
+def test_max_file_mb_from_env(monkeypatch, tmp_path):
+    from argus_quarry.config import QuarryConfig
+
+    monkeypatch.setenv("QUARRY_HOME", str(tmp_path))
+    monkeypatch.setenv("QUARRY_MAX_FILE_MB", "2.5")
+    assert QuarryConfig.from_env().max_file_bytes == int(2.5 * 1024 * 1024)
+    monkeypatch.setenv("QUARRY_MAX_FILE_MB", "0")
+    assert QuarryConfig.from_env().max_file_bytes == 0
+    monkeypatch.delenv("QUARRY_MAX_FILE_MB")
+    assert QuarryConfig.from_env().max_file_bytes == 100 * 1024 * 1024
+    # Negative would abort every download while ingest read it as unlimited and retried forever.
+    monkeypatch.setenv("QUARRY_MAX_FILE_MB", "-1")
+    with pytest.raises(ValueError):
+        QuarryConfig.from_env()
+
+
+def test_an_unsafe_subject_on_a_record_reusing_a_row_is_still_refused(config):
+    """A rerun record whose subject climbs out must not reach the pool filename, even when its row exists."""
+    url = "https://img/reused.jpg"
+    net = FakeNet(assets={url: make_image_bytes(seed=43)})
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, net)
+        pid = engine._insert_pending(make_record(url), engine._upsert_subject(make_record(url)), "PD")
+        store.set_status(pid, "failed")  # a retryable row with a safe subject
+        out = engine.ingest_record(make_record(url, subject="../../escaped"))
+        assert out.status == "failed" and out.reason.startswith("unsafe_subject=")
+    home = config.images_dir.parent
+    outside = [p for p in home.parent.rglob("*.jpg") if not p.resolve().is_relative_to(config.images_dir.resolve())]
+    assert outside == []

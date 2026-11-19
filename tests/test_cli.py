@@ -35,3 +35,42 @@ def test_stats_on_empty_db(tmp_path, monkeypatch):
     result = runner.invoke(app, ["stats"])
     assert result.exit_code == 0
     assert "Photographs:" in result.stdout
+
+
+def _landed_pool(home):
+    """A pool with one landed photo, its file then overwritten with other (valid) image bytes."""
+    from conftest import FakeNet, make_image_bytes, make_record
+
+    from argus_quarry.config import QuarryConfig
+    from argus_quarry.ingest import IngestEngine
+    from argus_quarry.store import ProvenanceStore
+
+    cfg = QuarryConfig(home=home)
+    cfg.ensure_dirs()
+    url = "https://img/a.jpg"
+    with ProvenanceStore(cfg.db_path) as store:
+        out = IngestEngine(cfg, store, FakeNet(assets={url: make_image_bytes(seed=1)})).ingest_record(make_record(url))
+    path = cfg.images_dir / "identity" / "Albert_Einstein" / out.filename
+    return cfg, url, path
+
+
+def test_verify_passes_a_clean_pool(tmp_path, monkeypatch):
+    _landed_pool(tmp_path / "quarry")
+    monkeypatch.setenv("QUARRY_HOME", str(tmp_path / "quarry"))
+    result = runner.invoke(app, ["verify"])
+    assert result.exit_code == 0 and "ok=1" in result.stdout
+
+
+def test_verify_fails_and_repair_marks_a_sha_mismatch(tmp_path, monkeypatch):
+    from conftest import make_image_bytes
+
+    from argus_quarry.store import ProvenanceStore
+
+    cfg, url, path = _landed_pool(tmp_path / "quarry")
+    path.write_bytes(make_image_bytes(seed=2))  # decodes fine, but not the recorded bytes
+    monkeypatch.setenv("QUARRY_HOME", str(cfg.home))
+    result = runner.invoke(app, ["verify"])
+    assert result.exit_code == 1 and "sha_mismatch=1" in result.stdout
+    assert runner.invoke(app, ["verify", "--repair"]).exit_code == 0
+    with ProvenanceStore(cfg.db_path) as store:
+        assert store.get_by_remote_url(url).status == "failed"

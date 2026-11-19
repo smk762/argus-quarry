@@ -72,6 +72,10 @@ CREATE INDEX IF NOT EXISTS idx_photographs_category ON photographs(category);
 """
 
 
+#: ``PRAGMA user_version`` while a legacy pool's flat-layout files still await relocation.
+_RELOCATION_PENDING = 1
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -267,6 +271,9 @@ class ProvenanceStore:
         # TABLE IF NOT EXISTS below cover fresh installs.
         legacy = self._table_exists("people") and not self._table_exists("subjects")
         if legacy:
+            # The schema changes below persist at once (DDL), but the file moves at the end can
+            # fail part-way: mark the relocation pending first, so a later open finishes it.
+            self._conn.execute(f"PRAGMA user_version = {_RELOCATION_PENDING}")
             self._conn.execute("ALTER TABLE people RENAME TO subjects")
         if self._table_exists("subjects"):
             self._ensure_columns(
@@ -307,8 +314,9 @@ class ProvenanceStore:
                 },
             )
         self._conn.executescript(_SCHEMA)
-        if legacy:
-            self._relocate_legacy_files()
+        if legacy or self._conn.execute("PRAGMA user_version").fetchone()[0] == _RELOCATION_PENDING:
+            self._relocate_legacy_files()  # idempotent: rows already moved are skipped
+            self._conn.execute("PRAGMA user_version = 0")
         self._conn.commit()
 
     def close(self) -> None:
@@ -387,6 +395,16 @@ class ProvenanceStore:
 
     def set_status(self, photo_id: int, status: str) -> None:
         self._conn.execute("UPDATE photographs SET status = ? WHERE id = ?", (status, photo_id))
+        self._conn.commit()
+
+    def mark_oversize(self, photo_id: int, seen_bytes: int) -> None:
+        """Record a download aborted past ``max_file_bytes``. ``file_size`` holds the bytes seen, a lower bound.
+
+        Nothing landed, so the row counts toward no budget (``total_bytes`` sums complete rows only).
+        """
+        self._conn.execute(
+            "UPDATE photographs SET status = 'oversize', file_size = ? WHERE id = ?", (seen_bytes, photo_id)
+        )
         self._conn.commit()
 
     def mark_complete(

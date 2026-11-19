@@ -156,3 +156,31 @@ def test_commons_zero_limit_yields_nothing(config):
     net = PagedCommons({"Albert Einstein": ["e1", "e2"]})
     assert list(CommonsDownloader(config, net).harvest(Subject(name="Albert Einstein"), limit=0)) == []
     assert net.calls == []
+
+
+def test_commons_reports_a_non_free_licence_instead_of_filtering_it(config):
+    """Licence policy is ingest's alone: the downloader yields the candidate with its raw label."""
+    resp = _canned_response()
+    resp["query"]["pages"]["1"]["imageinfo"][0]["extmetadata"]["LicenseShortName"]["value"] = "CC BY-NC 4.0"
+    records = list(CommonsDownloader(config, FakeNet(json_by_url={API_URL: resp})).harvest(Subject(name="X"), limit=10))
+    assert [r.licence for r in records] == ["CC BY-NC 4.0"]
+
+
+def test_only_ingest_applies_licence_policy():
+    """No downloader or archive imports the licence gate's functions: they report, ingest decides."""
+    import ast
+    from pathlib import Path
+
+    import argus_quarry
+
+    pkg = Path(argus_quarry.__file__).parent
+    gate = {"is_accepted_licence", "normalise_licence"}
+    for path in [*(pkg / "downloaders").rglob("*.py"), *(pkg / "archives").rglob("*.py")]:
+        names = {
+            a.name
+            for node in ast.walk(ast.parse(path.read_text()))
+            if isinstance(node, ast.ImportFrom)
+            for a in node.names
+        }
+        names |= {n.id for n in ast.walk(ast.parse(path.read_text())) if isinstance(n, ast.Name)}
+        assert not names & gate, f"{path.relative_to(pkg)} applies licence policy"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 duckdb = pytest.importorskip("duckdb", reason="archives extra not installed")
@@ -486,6 +487,8 @@ def test_cors_allows_post_only_when_fetch_is_enabled(archives_config, monkeypatc
             "/archives/pd12m/fetch",
             headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST"},
         )
+        # credentials only ever go to an explicit origin list, never with the "*" wildcard
+        assert ("access-control-allow-credentials" in r.headers) is bool(origins and origins != ["*"])
         return r.headers.get("access-control-allow-methods", "")
 
     assert "POST" not in preflight(False)
@@ -625,3 +628,160 @@ def test_cli_archive_errors_are_one_line_not_tracebacks(tmp_path, pd12m_dir, mon
     bad.write_text(json.dumps({"archive": "pd12m", "subject": "s", "category": "../../x"}))
     result = runner.invoke(app, ["archives", "fetch", str(bad)])
     assert result.exit_code == 2 and "category" in result.output
+
+
+def test_a_keyerror_inside_an_archive_constructor_is_not_unknown_archive(tmp_path, monkeypatch):
+    from argus_quarry import archives
+
+    def broken(config):
+        raise KeyError("missing setting")
+
+    monkeypatch.setitem(archives._REGISTRY, "broken", broken)
+    with pytest.raises(KeyError) as exc:
+        get_archive("broken", QuarryConfig(home=tmp_path))
+    assert "unknown archive" not in str(exc.value) and "missing setting" in str(exc.value)
+    with pytest.raises(KeyError, match="unknown archive 'nope'"):
+        get_archive("nope", QuarryConfig(home=tmp_path))
+
+
+def test_a_fetch_worker_that_fails_early_releases_the_lock_and_ends_the_stream(archives_config, monkeypatch):
+    import threading
+
+    import argus_quarry.ingest as ingest
+
+    original = ingest.FetchSummary
+
+    def boom():
+        raise RuntimeError("worker setup failed")
+
+    monkeypatch.setattr(ingest, "FetchSummary", boom)
+    client = _app(archives_config, monkeypatch, allow_fetch=True, net_factory=lambda _cfg: FakeNet({}))
+    spec = SliceSpec(archive="pd12m", subject="Harbour", query=ArchiveQuery(q="harbour")).model_dump(mode="json")
+    got: list = []
+    t = threading.Thread(target=lambda: got.append(client.post("/archives/pd12m/fetch", json=spec)), daemon=True)
+    t.start()
+    t.join(10)
+    assert got, "the fetch stream never ended"
+    frames = [json.loads(line) for line in got[0].text.splitlines()]
+    assert frames[-1]["type"] == "error" and "worker setup failed" in frames[-1]["message"]
+    monkeypatch.setattr(ingest, "FetchSummary", original)
+    again = client.post("/archives/pd12m/fetch", json=spec)
+    assert again.status_code != 409  # fetch_lock was released
+
+
+def _ssrf_env(monkeypatch, routes: dict[str, httpx.Response]):
+    import socket
+
+    import argus_quarry.server.app as server_app
+
+    hosts = {"cdn.test": "93.184.216.34", "evil.test": "127.0.0.1"}
+    real = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, port, *a, **k):
+        if host in hosts:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (hosts[host], port))]
+        return real(host, port, *a, **k)
+
+    monkeypatch.setattr(server_app.socket, "getaddrinfo", fake_getaddrinfo)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return routes.get(str(request.url), httpx.Response(404))
+
+    return server_app, httpx.MockTransport(handler), seen
+
+
+def test_archive_original_fetch_follows_public_redirects(archives_config, monkeypatch):
+    server_app, transport, _seen = _ssrf_env(
+        monkeypatch,
+        {
+            "https://cdn.test/a.jpg": httpx.Response(302, headers={"location": "https://cdn.test/b.jpg"}),
+            "https://cdn.test/b.jpg": httpx.Response(200, content=b"img"),
+        },
+    )
+    assert server_app._fetch_original(archives_config, "https://cdn.test/a.jpg", transport=transport) == b"img"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://127.0.0.1/x", "http://169.254.169.254/latest/meta-data", "http://evil.test/x", "file:///etc/passwd"],
+)
+def test_archive_original_fetch_refuses_internal_addresses(archives_config, monkeypatch, url):
+    server_app, transport, seen = _ssrf_env(monkeypatch, {})
+    with pytest.raises(server_app.UnsafeURL):
+        server_app._fetch_original(archives_config, url, transport=transport)
+    assert seen == []
+
+
+def test_archive_original_fetch_refuses_a_redirect_to_an_internal_address(archives_config, monkeypatch):
+    server_app, transport, seen = _ssrf_env(
+        monkeypatch,
+        {"https://cdn.test/a.jpg": httpx.Response(302, headers={"location": "http://169.254.169.254/latest"})},
+    )
+    with pytest.raises(server_app.UnsafeURL):
+        server_app._fetch_original(archives_config, "https://cdn.test/a.jpg", transport=transport)
+    assert seen == ["https://cdn.test/a.jpg"]  # the metadata endpoint was never requested
+
+
+def test_a_second_fetch_while_one_runs_is_409(archives_config, monkeypatch):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+
+    class BlockingNet(FakeNet):
+        def download(self, url, dest, **kw):
+            entered.set()
+            assert release.wait(10), "the test never released the first fetch"
+            return super().download(url, dest, **kw)
+
+    assets = {f"https://s3.example/a{i}.jpeg": make_image_bytes(64, seed=i) for i in (1, 4)}
+    client = _app(archives_config, monkeypatch, allow_fetch=True, net_factory=lambda _cfg: BlockingNet(assets))
+    spec = SliceSpec(archive="pd12m", subject="Harbour", query=ArchiveQuery(q="harbour")).model_dump(mode="json")
+    first: list = []
+    t = threading.Thread(target=lambda: first.append(client.post("/archives/pd12m/fetch", json=spec)), daemon=True)
+    t.start()
+    try:
+        assert entered.wait(10), "the first fetch never started downloading"
+        second = client.post("/archives/pd12m/fetch", json=spec)
+        assert second.status_code == 409 and "already running" in second.json()["detail"]
+    finally:
+        release.set()
+        t.join(10)
+    assert first and json.loads(first[0].text.splitlines()[-1])["type"] == "done"
+    assert client.post("/archives/pd12m/fetch", json=spec).status_code == 200  # the lock is free again
+
+
+def _tree(root: Path, skip: Path) -> dict[str, tuple[int, int]]:
+    """Every path under *root* except *skip*'s subtree, with its size and mtime."""
+    out = {}
+    for p in root.rglob("*"):
+        if p == skip or skip in p.parents:
+            continue
+        st = p.lstat()
+        out[str(p.relative_to(root))] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def test_archives_write_nothing_outside_quarry_home(tmp_path, pd12m_dir, megalith_dir, monkeypatch):
+    # The archive dirs sit beside $QUARRY_HOME under tmp_path, as a real :ro mount sits beside it on disk.
+    home = tmp_path / "quarry"
+    before = _tree(tmp_path, home)
+    cfg = QuarryConfig(home=home, archive_dirs={"pd12m": pd12m_dir, "megalith": megalith_dir})
+    cfg.ensure_dirs()
+    for name in ("pd12m", "megalith"):
+        get_archive(name, cfg).build_index()
+        get_archive(name, cfg).build_index()  # a rebuild replaces the index, still inside home
+    assets = {f"https://s3.example/a{i}.jpeg": make_image_bytes(64, seed=i) for i in (1, 4)}
+    client = _app(cfg, monkeypatch, allow_fetch=True, net_factory=lambda _cfg: FakeNet(assets))
+    assert client.get("/archives/pd12m/search", params={"q": "harbour"}).status_code == 200
+    spec = SliceSpec(archive="pd12m", subject="Harbour", query=ArchiveQuery(q="harbour")).model_dump(mode="json")
+    assert json.loads(client.post("/archives/pd12m/fetch", json=spec).text.splitlines()[-1])["type"] == "done"
+    assert _tree(tmp_path, home) == before
+
+
+def test_megalith_licence_label_reads_as_pd_never_cc0():
+    """Megalith has no per-photo licence; its dataset-filter label must not claim CC0 for every item."""
+    from argus_quarry.archives.megalith import LICENCE
+
+    assert "cc0" not in LICENCE.lower() and normalise_licence(LICENCE) == "PD"

@@ -4,6 +4,42 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-19
+
+### Added
+
+- `export` writes a `<stem>.json` sidecar beside each published file (licence, source and landing URLs, attribution, photographer, year, SHA256), so the published tree carries its provenance and argus-curator's `--carry-sidecars` carries it on. It names its `producer` (`argus-quarry`) and `schema`, holds a `provenance` block in argus-cortex's shared `Provenance` shape, and marks every `identity` photo `"likeness_consent": false`, so no quarry photo becomes a face source (#22). The sidecar is written first: a photo whose provenance can't be written is not published. argus-cortex is now a dependency.
+- CLAUDE.md has a "Must never happen" table naming the check behind each rule (#41), with new tests for the gaps: a concurrent fetch gets 409, archives write nothing outside `$QUARRY_HOME`, `phash` never dedups, every request is rate-limited and sends the User-Agent, downloaders never apply licence policy, Megalith's label never reads as CC0, and CORS sends no credentials with `*`.
+- **Hosted demo** at [quarry.dragonhound.dev](https://quarry.dragonhound.dev): a static replay of one real Commons run (four subjects, 100 candidates: 89 landed, 11 quarantined) with each candidate's licence, verdict, reason and provenance, filterable by verdict, category and subject. `scripts/record_tape.py` records it, `web/` shows it, and `make pages` builds `web/out/`. Only landed PD/CC0 files are shown as images. Quarry itself stays CLI-only (DESIGN.md §9).
+
+### Fixed
+
+- README: the example host paths are placeholders now (`<ARCHIVE_ROOT>`)
+- Ingest refuses a record whose category, subject or source isn't a single path component (a `/`, `\`, `..` or NUL), before it downloads or writes a DB row. Those name the landing folder, pool filename and cache file, so `subject="../../x"` could land a file outside `images/`. Slice specs and seed subjects were already slugified; this guards every other `SourceRecord`. A rerun that reuses an existing row checks the record's own subject too, since it names the pool filename.
+
+- Licence labels match whole tokens only (#40), and a negated or qualified label ("Not CC0", "formerly CC0, now CC BY-NC", "public domain status unknown") is quarantined rather than accepted. Before, `pd` matched inside words, so "CC BY-SA, updated 2020" was accepted as PD.
+- Resumed downloads can no longer splice two different files together. A partial resumes only with its recorded ETag / Last-Modified sent as `If-Range`, and only when the `206` starts at the partial's length. A `.part` that was complete when the process died is finished on the server's `416` instead of failing forever. A gone or over-cap download leaves no partial in the cache.
+- `verify --repair` marks SHA256-mismatched rows failed (it only counted them), and `verify` exits 1 when it finds a problem it didn't repair.
+- `export` skips a row whose category, subject or filename would resolve outside `images/` or the destination. A re-export over an earlier symlink tree republishes its files rather than skipping every link into the pool. `/thumb` refuses such a row with a 404 instead of reading the file it names.
+- `export` refuses a destination that overlaps `$QUARRY_HOME` (inside it, around it, or the same dir); the raw pool and the published tree stay apart.
+- `fetch_public_domain_metadata.py` refuses photo and tar files in every part, whatever the part's own patterns say, so it can only ever archive metadata.
+- A legacy pool whose flat-layout file relocation failed part-way finishes it on the next read-write open (`PRAGMA user_version` marks it pending); before, the remaining files were stranded.
+- Seed entries with `category: null` inherit the file's category instead of failing validation.
+- Server: the archive thumb fetch follows redirects by hand and refuses any hop to a non-http(s) URL or a private, loopback, link-local or reserved address (SSRF). A fetch worker that fails before ingesting releases the fetch lock and ends its stream (before, every later fetch returned 409). `/thumb` touches the pool only in a worker thread, and answers an undecodable file with a 422 that doesn't include its path.
+- Megalith mirror index: PAX / GNU long-name headers over 1 MiB and negative sizes are refused (GNU base-256 negatives decode as negative). Member keys a TSV row can't hold are skipped instead of breaking the whole lookup build. `consolidate` never stamps offsets scanned at another (or an unrecorded) revision with the current one, and `build` rescans them.
+- Semantic index: concurrent builds of one archive serialise their publish and cleanup, so a build no longer deletes the directory the pointer now names. A pointer's `dir` must be one directory directly under the index root. `search` no longer writes into the caller's `allowed` mask, and an empty row range reads as an empty matrix.
+- `get_archive` reports a `KeyError` raised inside an archive's constructor as itself, not as "unknown archive".
+- `scripts/fetch_public_domain_metadata.py` writes `SOURCE.json` atomically under a lock, and refuses a `--root` on the root filesystem (an unmounted NAS) unless given `--allow-root-fs`.
+- `scripts/record_tape.py`: the budget stops the whole recording, and the rerun survives it. Search skips are filed under their own subject. Thumbnails honour EXIF orientation. `build` refuses an `--out` that is or holds the cache, cwd, home or repo. `scripts/demo_tape.py` refuses image files with no record.
+- Demo site: `Ext` links only `http(s)` URLs and renders anything else as text.
+
+### Changed
+
+- `max_file_bytes` is enforced (#46). It was reserved and capped nothing. Every download now aborts past it. Its default rises from 15 MiB to 100 MiB, so it rejects only runaway files and ordinary large originals are still downscaled by the megapixel cap. Set it with `QUARRY_MAX_FILE_MB` (`0` = unlimited); a negative value is refused. An over-cap row gets the new `oversize` status with the bytes seen, counts in the fetch summary, and is skipped on reruns until the cap is raised past that size.
+- Release PRs into `main` now fail CI unless `CHANGELOG.md` has a dated, non-empty section newer than the latest tag, with `[Unreleased]` emptied and the compare link added (`scripts/check_changelog.py --release-pr`). A `v*` tag also checks for its section before anything publishes, so a missing section can no longer ship PyPI and the image without a GitHub Release, as v0.4.0 did.
+
+## [0.4.0] - 2026-11-14
+
 ### Added
 
 - **Megalith mirror fallback** ([#16](https://github.com/smk762/argus-quarry/issues/16)). A Megalith photo that Flickr reports gone (404 / 410 / 403) now lands from the [Drawthings mirror](https://huggingface.co/datasets/drawthingsai/megalith-10m) with a single byte-range read of its tar shard.
@@ -103,6 +139,9 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 First release: provenance-first acquisition of public-domain / CC0 portraits from Wikimedia Commons into a SQLite-tracked raw pool, with export to a curator-ready tree.
 
+[Unreleased]: https://github.com/smk762/argus-quarry/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/smk762/argus-quarry/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/smk762/argus-quarry/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/smk762/argus-quarry/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/smk762/argus-quarry/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/smk762/argus-quarry/compare/v0.2.2...v0.2.3

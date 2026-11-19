@@ -392,3 +392,71 @@ def test_ext_for_never_raises_on_a_malformed_range():
     # An empty span (size 0) is refused by the download, not by naming its temp file.
     assert _ext_for("https://example.org/00001.tar#bytes=10-9") == ".jpg"
     assert _ext_for("https://example.org/a.png?x=1#bytes=0-9") == ".png"
+
+
+# ── hostile / odd archives ───────────────────────────────────────────
+
+
+def _raw_header(name: bytes, size_field: bytes, typeflag: bytes) -> bytes:
+    """One ustar header block with ``size_field`` (12 bytes) verbatim and a valid checksum."""
+    h = bytearray(512)
+    h[: len(name)] = name
+    h[100:108] = b"0000644\0"
+    h[124:136] = size_field
+    h[156:157] = typeflag
+    h[257:263] = b"ustar\0"
+    h[148:156] = b" " * 8
+    h[148:156] = b"%06o\0 " % sum(h)
+    return bytes(h)
+
+
+def test_scan_tar_refuses_a_huge_extended_header_without_reading_it():
+    data = _raw_header(b"././@PaxHeader", b"%011o\0" % (2 << 30), b"x") + bytes(1024)
+    reads: list[int] = []
+
+    def read(offset: int, length: int) -> bytes:
+        reads.append(length)
+        return data[offset : offset + length]
+
+    with pytest.raises(ValueError, match="extended header"):
+        list(scan_tar(read))
+    assert max(reads) <= 8192
+
+
+def test_base256_negative_sizes_are_negative_and_refused():
+    from argus_quarry.archives import mirror
+
+    assert mirror._octal(b"\xff" * 12) == -1
+    assert mirror._octal(b"\x80" + bytes(10) + b"\x05") == 5
+    data = _raw_header(b"a.jpg", b"\xff" * 12, b"0") + bytes(1024)
+    with pytest.raises(ValueError, match="negative"):
+        list(scan_tar(lambda o, n: data[o : o + n]))
+
+
+@pytest.mark.parametrize("bad", ["bad\tkey", "bad\nkey", 'bad"key'])
+def test_a_hostile_member_name_does_not_break_the_index(mirror_env, images, bad):
+    cfg, hub = mirror_env
+    hub.shards["00000"] = _shard_tar({"000000001": images["9001"], bad: images["9002"], "000000002": images["9002"]})
+    with _net(cfg, hub) as net:
+        assert MegalithMirror(cfg).build(net)["members"] == 3
+
+
+def test_consolidate_never_stamps_stale_offsets_with_the_current_revision(mirror_env, images):
+    cfg, hub = mirror_env
+    mirror = MegalithMirror(cfg)
+    with _net(cfg, hub) as net:
+        mirror.build(net)
+    (mirror.work_dir / "REVISION").write_text("someotherrevision\n")  # metadata re-fetched since
+    assert mirror.consolidate() == 0
+    assert mirror.lookup([_flickr(p) for p in images]) == {}
+
+
+def test_offsets_with_no_revision_marker_are_rescanned(mirror_env):
+    cfg, hub = mirror_env
+    mirror = MegalithMirror(cfg)
+    with _net(cfg, hub) as net:
+        mirror.build(net, shards=["00000"])
+        (mirror.work_dir / "REVISION").unlink()
+        hub.requests.clear()
+        mirror.build(net, shards=["00000"])
+    assert any("00000" in url for _m, url, _r in hub.requests)

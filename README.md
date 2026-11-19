@@ -1,4 +1,9 @@
-# Argus Quarry
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/quarry/argus-quarry-lockup-dark.svg">
+    <img alt="Argus Quarry" src="https://raw.githubusercontent.com/smk762/argus-cortex/dev/brand/packages/quarry/argus-quarry-lockup-light.svg" height="52">
+  </picture>
+</h1>
 
 [![PyPI](https://img.shields.io/pypi/v/argus-quarry)](https://pypi.org/project/argus-quarry/)
 [![Python](https://img.shields.io/pypi/pyversions/argus-quarry)](https://pypi.org/project/argus-quarry/)
@@ -22,6 +27,10 @@ scoring, near-duplicate detection, faces, embeddings and captioning are owned
 downstream by [argus-curator](https://github.com/smk762/argus-curator) and
 [argus-lens](https://github.com/smk762/argus-lens); quarry never re-implements
 them.
+
+**Demo:** [quarry.dragonhound.dev](https://quarry.dragonhound.dev) replays a real recorded run:
+the licence Commons gave each candidate, whether quarry landed or quarantined it, and the
+provenance it recorded. It is a static replay, not a UI for quarry.
 
 > **Want a UI?** Quarry has no UI of its own (see [DESIGN.md](DESIGN.md) §9), but
 > `argus-quarry serve` exposes an [HTTP API](#http-server) that the suite's web
@@ -145,8 +154,19 @@ $QUARRY_HOME/                          # side-car state — NEVER scanned by cur
 
 $DATASET_DIR/                          # published, curator-ready view (via export)
 ├── identity/Albert_Einstein/…          # symlinks (default) or copies into the pool
+│   ├── <stem>.jpg
+│   └── <stem>.json                    # provenance sidecar (see below)
 └── wardrobe/Red_dress/…
 ```
+
+`DATASET_DIR` must not overlap `$QUARRY_HOME`; `export` refuses a destination inside the pool or around it.
+
+Each published file gets a `<stem>.json` sidecar, the name argus-curator's `--carry-sidecars` carries on
+to its own export. It holds `"producer": "argus-quarry"` and a `schema` id (darkroom writes `<stem>.json`
+too), the row's provenance (licence, source and landing URLs, attribution, SHA256, …), and a
+`provenance` block in argus-cortex's shared `Provenance` shape (`kind: "stock"`). A photo in a person
+category (`identity`) also carries `"likeness_consent": false`: the licence covers the photo, not the
+person in it, so curator and argus-mask refuse it as a face source.
 
 ## Provenance model
 
@@ -175,6 +195,7 @@ Copy `.env.example` to `.env`. Key knobs:
 |---|---|---|
 | `QUARRY_HOME` | `./quarry` | Raw pool + DB + cache + logs (side-car dir) |
 | `QUARRY_MAX_GB` | `40` | Total raw-pool ceiling; `0` = unlimited |
+| `QUARRY_MAX_FILE_MB` | `100` | Per-download ceiling; a larger file is aborted and recorded `oversize` (skipped on reruns until raised); `0` = unlimited |
 | `QUARRY_MAX_MEGAPIXELS` | `12` | Per-file resolution cap; larger images are downscaled on landing |
 | `COMMONS_USER_AGENT` | descriptive default | Polite UA (Commons/LoC expect one) |
 | `QUARRY_USER_AGENT` | _(unset)_ | Fallback UA, used when `COMMONS_USER_AGENT` is unset |
@@ -288,9 +309,9 @@ dataset's licence filter as its licence label.
 
 ```bash
 # 1. archive the metadata (~45 GB incl. PD12M's CLIP embeddings; resumable; no photos)
-HF_TOKEN=hf_... uv run scripts/fetch_public_domain_metadata.py --root /media/photos/public_domain
+HF_TOKEN=hf_... uv run scripts/fetch_public_domain_metadata.py --root <ARCHIVE_ROOT>
 # 2. point quarry at it and build the search index (DuckDB, under $QUARRY_HOME/cache/archives/)
-export QUARRY_PD12M_DIR=/media/photos/public_domain/pd12m QUARRY_MEGALITH_DIR=/media/photos/public_domain/megalith
+export QUARRY_PD12M_DIR=<ARCHIVE_ROOT>/pd12m QUARRY_MEGALITH_DIR=<ARCHIVE_ROOT>/megalith
 pip install "argus-quarry[cli,archives]"
 argus-quarry archives index
 argus-quarry archives search pd12m --q "harbour boats" --min-short-side 1024
@@ -437,6 +458,14 @@ adding one never touches ingest, storage, or export.
 make lint     # ruff
 make test     # pytest
 make check    # lint + test + build
+```
+
+The hosted demo lives in `web/` (Next.js static export). `make pages` builds it into `web/out/`
+from the committed tape in `web/public/tape/`. To re-record the tape (talks to Wikimedia Commons):
+
+```bash
+uv run --no-sync python scripts/record_tape.py record --subjects docs/demo/subjects.yaml --limit 10 --fresh
+uv run --no-sync python scripts/record_tape.py build
 ```
 
 ## Related projects

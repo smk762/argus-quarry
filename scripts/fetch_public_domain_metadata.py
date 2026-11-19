@@ -37,9 +37,11 @@ files already complete.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,6 +58,21 @@ class Part:
     allow: tuple[str, ...] | None = None
     ignore: tuple[str, ...] | None = None
     note: str = ""
+
+
+#: Photos and the shards that hold them. Never fetched, whatever a part's own patterns say: this
+#: script archives metadata only, and photos land one at a time through ingest's licence gate.
+#: huggingface_hub matches with case-sensitive ``fnmatch``, so each extension is listed in both cases.
+NEVER_FETCH: tuple[str, ...] = tuple(
+    f"*.{e}"
+    for ext in ("tar", "jpg", "jpeg", "png", "webp", "gif", "tif", "tiff", "bmp", "avif", "heic")
+    for e in (ext, ext.upper())
+)
+
+
+def ignore_patterns(part: Part) -> list[str]:
+    """What *part* must not fetch: ``.gitattributes``, its own ignores, and every photo or shard."""
+    return [".gitattributes", *(part.ignore or ()), *NEVER_FETCH]
 
 
 SOURCES: dict[str, dict[str, Part]] = {
@@ -123,13 +140,23 @@ def plan(api, part: Part, token: str | None) -> tuple[str, list[tuple[str, int]]
         filter_repo_objects(
             [f.path for f in tree],
             allow_patterns=list(part.allow) if part.allow else None,
-            ignore_patterns=[".gitattributes", *(part.ignore or ())],
+            ignore_patterns=ignore_patterns(part),
         )
     )
     return info.sha, [(f.path, f.size) for f in tree if f.path in keep]
 
 
-def check_root(root: Path, create: bool) -> None:
+def mount_point(path: Path) -> Path:
+    """The mount point of the filesystem holding ``path`` (its nearest existing ancestor)."""
+    probe = path.resolve()
+    while not probe.exists():
+        probe = probe.parent
+    while not os.path.ismount(probe):
+        probe = probe.parent
+    return probe
+
+
+def check_root(root: Path, create: bool, allow_root_fs: bool = False) -> None:
     """Refuse to silently fill the wrong disk when the NAS isn't mounted."""
     probe = root
     while not probe.exists():
@@ -139,17 +166,42 @@ def check_root(root: Path, create: bool) -> None:
             f"error: {root} does not exist (nearest existing parent: {probe}). "
             "Is the NAS mounted? Pass --create-root to create it anyway, or --root elsewhere."
         )
+    # An unmounted NAS usually leaves its (empty, writable) mount-point directory on the
+    # local disk, so existence alone proves nothing: check what filesystem `root` is on.
+    if mount_point(root) == Path("/") and not allow_root_fs:
+        sys.exit(
+            f"error: {root} is on the root filesystem, not a mounted volume. "
+            "Is the NAS mounted? Pass --allow-root-fs to write there anyway."
+        )
     if not os.access(probe, os.W_OK):
         sys.exit(f"error: {probe} is not writable by this user")
 
 
 def write_manifest(root: Path, source: str, records: list[dict]) -> None:
+    """Merge ``records`` into ``<root>/<source>/SOURCE.json``, atomically and under a lock.
+
+    The read-merge-write holds an exclusive ``flock`` so overlapping runs can't drop each
+    other's parts, and the new manifest is fsynced to a temp file then ``os.replace``d, so
+    an interruption leaves the previous manifest intact rather than a truncated one.
+    """
     path = root / source / "SOURCE.json"
-    existing = json.loads(path.read_text()) if path.exists() else {"source": source, "parts": {}}
-    for rec in records:
-        existing["parts"][rec["part"]] = rec
-    existing["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-    path.write_text(json.dumps(existing, indent=2) + "\n")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_name(".SOURCE.json.lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        existing = json.loads(path.read_text()) if path.exists() else {"source": source, "parts": {}}
+        for rec in records:
+            existing["parts"][rec["part"]] = rec
+        existing["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".SOURCE.json.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                fh.write(json.dumps(existing, indent=2) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
 
 def main() -> int:
@@ -182,6 +234,11 @@ def main() -> int:
     p.add_argument("--max-workers", type=int, default=8, help="parallel file downloads per part")
     p.add_argument("--dry-run", action="store_true", help="list what would be fetched, with sizes, and exit")
     p.add_argument("--create-root", action="store_true", help="create --root if it does not exist")
+    p.add_argument(
+        "--allow-root-fs",
+        action="store_true",
+        help="allow --root on the root filesystem (by default that means the NAS is not mounted)",
+    )
     args = p.parse_args()
 
     from huggingface_hub import HfApi, snapshot_download
@@ -205,7 +262,7 @@ def main() -> int:
     if args.dry_run:
         return 0
 
-    check_root(args.root, args.create_root)
+    check_root(args.root, args.create_root, args.allow_root_fs)
     by_source: dict[str, list[dict]] = {}
     for source, part, sha, files, total in planned:
         dest = args.root / source / part.name
@@ -217,7 +274,7 @@ def main() -> int:
             revision=sha,
             local_dir=dest,
             allow_patterns=list(part.allow) if part.allow else None,
-            ignore_patterns=[".gitattributes", *(part.ignore or ())],
+            ignore_patterns=ignore_patterns(part),
             max_workers=args.max_workers,
             token=token,
         )

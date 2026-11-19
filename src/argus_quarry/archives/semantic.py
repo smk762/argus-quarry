@@ -24,6 +24,7 @@ torch). Everything else here needs only faiss + numpy (``[embeddings]``).
 
 from __future__ import annotations
 
+import fcntl
 import functools
 import json
 import math
@@ -137,6 +138,8 @@ def _read_rows(sources: list[_Source], starts: list[int], lo: int, hi: int):
             if raw.size != (b - a) * src.dim:
                 raise SemanticUnavailable(f"{src.path.name}: truncated (short read at row {a - s})")
             parts.append(raw.reshape(b - a, src.dim).astype(np.float32, copy=False))
+    if not parts:  # an empty or out-of-range [lo, hi)
+        return np.empty((0, sources[0].dim if sources else 0), dtype=np.float32)
     x = np.concatenate(parts) if len(parts) > 1 else parts[0]
     norms = np.linalg.norm(x, axis=1, keepdims=True)
     np.divide(x, norms, out=x, where=norms > 0)
@@ -222,21 +225,28 @@ def build_vector_index(
             "built_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         (building / "meta.json").write_text(json.dumps(meta, indent=2))
-        building.rename(final)
-        pointer = pointer_path(out_root, name)
-        tmp = pointer.with_name(f".{pointer.name}.{token}")
-        tmp.write_text(json.dumps(meta, indent=2))
-        os.replace(tmp, pointer)
-        done = True
+        # Publish and clean up under a per-archive lock: a concurrent build of the same
+        # archive must not delete the directory the pointer has just been flipped to.
+        with open(out_root / f".{name}.semantic.lock", "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            building.rename(final)
+            pointer = pointer_path(out_root, name)
+            tmp = pointer.with_name(f".{pointer.name}.{token}")
+            tmp.write_text(json.dumps(meta, indent=2))
+            os.replace(tmp, pointer)
+            done = True
+            # Older builds are unreachable now. A server that still maps one keeps its open
+            # files until it reloads (POSIX unlink semantics), so this is safe to do live.
+            # Whatever the pointer names now is kept, even if it is not this build.
+            current = read_pointer(out_root, name)
+            keep = {final.name, current["dir"] if current else final.name}
+            for old in out_root.glob(f"{name}.semantic.*"):
+                if old.is_dir() and old.name not in keep:
+                    shutil.rmtree(old, ignore_errors=True)
     finally:
         if not done:
             shutil.rmtree(building, ignore_errors=True)
             shutil.rmtree(final, ignore_errors=True)
-    # Older builds are unreachable now. A server that still maps one keeps its open
-    # files until it reloads (POSIX unlink semantics), so this is safe to do live.
-    for old in out_root.glob(f"{name}.semantic.*"):
-        if old.is_dir() and old.name != final.name:
-            shutil.rmtree(old, ignore_errors=True)
     return meta
 
 
@@ -251,9 +261,17 @@ def read_pointer(root: Path, name: str) -> dict[str, Any] | None:
         meta = json.loads(pointer_path(root, name).read_text())
     except (OSError, ValueError):
         return None
-    if not isinstance(meta, dict) or meta.get("schema") != SEMANTIC_SCHEMA or not meta.get("dir"):
+    if not isinstance(meta, dict) or meta.get("schema") != SEMANTIC_SCHEMA:
         return None
-    if not (root / meta["dir"]).is_dir():
+    d = meta.get("dir")
+    # One build directory directly under root: never an absolute path, a separator or "..".
+    if not isinstance(d, str) or not d or d in (".", "..") or Path(d).name != d or "\\" in d:
+        return None
+    candidate = root / d
+    try:
+        if not candidate.resolve().is_relative_to(root.resolve()) or not candidate.is_dir():
+            return None
+    except OSError:
         return None
     return meta
 
@@ -302,6 +320,7 @@ class VectorIndex:
         q = q / norm
         if allowed is not None:
             if exclude is not None and 0 <= exclude < self.rows:
+                allowed = np.array(allowed, dtype=bool, copy=True)  # never write the caller's mask
                 allowed[exclude] = False
             n_allowed = int(allowed.sum())
         if allowed is not None and n_allowed <= max(EXACT_MAX, k):

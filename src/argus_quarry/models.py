@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator
 # Ingest lifecycle for a photograph row. ``pending``/``downloading`` support
 # resumability; ``duplicate``/``quarantined`` record *why* a candidate did not
 # land so reruns skip it cheaply instead of re-fetching.
-PhotoStatus = ("pending", "downloading", "complete", "failed", "duplicate", "quarantined")
+PhotoStatus = ("pending", "downloading", "complete", "failed", "duplicate", "quarantined", "oversize")
 
 # Subject categories, aligned with the suite's LoRA-training taxonomy
 # (argus-curator ``TargetCategory``). ``identity`` is people/portraits; the rest
@@ -47,6 +47,19 @@ _ACCEPTED_TOKENS = (
 )
 
 
+def _word(*alternatives: str) -> re.Pattern[str]:
+    """Match any alternative as a whole token, so ``pd`` never matches inside ``updated``."""
+    return re.compile(r"(?<![a-z0-9])(?:" + "|".join(map(re.escape, alternatives)) + r")(?![a-z0-9])")
+
+
+_CC0_RE = _word("cc0", "creative commons zero")
+_PD_RE = _word(*_ACCEPTED_TOKENS)
+_QUALIFIER_RE = re.compile(
+    r"(?<![a-z0-9])(?:not|non|unknown|formerly|previously|no longer|unclear|uncertain|disputed"
+    r"|nc|noncommercial|non-commercial|cc[- ]?by)(?![a-z0-9])"
+)
+
+
 def normalise_licence(raw: str | None) -> str | None:
     """Collapse a raw source licence label to a canonical token, or ``None``.
 
@@ -56,14 +69,17 @@ def normalise_licence(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    text = raw.strip().lower()
+    text = " ".join(raw.strip().lower().split())
     if not text:
         return None
-    if "cc0" in text or "creative commons zero" in text:
+    # A negated or qualified label ("Not CC0", "formerly CC0, now CC BY-NC", "public domain
+    # status unknown") names the free licence without granting it: never guess, quarantine.
+    if _QUALIFIER_RE.search(text):
+        return None
+    if _CC0_RE.search(text):
         return "CC0"
-    for token in _ACCEPTED_TOKENS:
-        if token in text:
-            return "PD"
+    if _PD_RE.search(text):
+        return "PD"
     return None
 
 
