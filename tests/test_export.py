@@ -123,3 +123,13 @@ def test_export_refuses_a_dest_that_overlaps_the_pool(config, tmp_path, where):
     dest = {"inside": config.home / "published", "around": config.home.parent, "same": config.home}[where]
     with ProvenanceStore(config.db_path) as store, pytest.raises(ValueError, match="overlaps"):
         export_tree(config, store, dest, mode="symlink")
+
+
+def test_a_second_symlink_export_republishes_every_file(config, tmp_path):
+    """Re-exporting over an earlier symlink tree must not mistake its links (into the pool) for an escape."""
+    _land_two(config)
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        export_tree(config, store, dest, mode="symlink")
+        again = export_tree(config, store, dest, mode="symlink")
+    assert again.published == 3 and again.skipped == 0

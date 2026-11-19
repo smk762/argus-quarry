@@ -138,7 +138,12 @@ def export_tree(
         src = config.images_dir.joinpath(*parts)
         dst = dest_root.joinpath(*parts)
         # Rows come from third-party metadata: never read or write outside the pool / dest.
-        if not all(_safe_part(p) for p in parts) or not _within(src, config.images_dir) or not _within(dst, dest_root):
+        # dst's parent, not dst: an earlier symlink export left dst pointing into the pool by design.
+        if (
+            not all(_safe_part(p) for p in parts)
+            or not _within(src, config.images_dir)
+            or not _within(dst.parent, dest_root)
+        ):
             logger.warning("export_unsafe_path", category=ph.category, subject=ph.subject, filename=ph.filename)
             result.skipped += 1
             continue

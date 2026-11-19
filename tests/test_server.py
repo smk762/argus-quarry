@@ -274,6 +274,20 @@ def test_thumb_of_an_undecodable_file_is_422_without_a_path(client, seeded, conf
     assert str(config.home) not in resp.text and "a.jpg" not in resp.json()["detail"]
 
 
+def test_thumb_never_reads_a_row_whose_path_climbs_out(client, seeded, config):
+    """A row whose category climbs out of images/ is a 404, never a read of the file it names."""
+    import sqlite3
+
+    outside = config.home / "outside" / "Albert_Einstein"  # images/../outside/<subject>/
+    outside.mkdir(parents=True)
+    (outside / "a.jpg").write_bytes(make_image_bytes(size=64, seed=9))
+    with sqlite3.connect(config.db_path) as con:
+        con.execute(
+            "UPDATE photographs SET category = '../outside', filename = 'a.jpg' WHERE id = ?", (seeded["with_file"],)
+        )
+    assert client.get("/thumb", params={"id": seeded["with_file"]}).status_code == 404
+
+
 def test_thumb_touches_the_filesystem_off_the_event_loop(client, seeded, monkeypatch):
     import asyncio
     from pathlib import Path

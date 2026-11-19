@@ -275,3 +275,22 @@ def test_max_file_mb_from_env(monkeypatch, tmp_path):
     assert QuarryConfig.from_env().max_file_bytes == 0
     monkeypatch.delenv("QUARRY_MAX_FILE_MB")
     assert QuarryConfig.from_env().max_file_bytes == 100 * 1024 * 1024
+    # Negative would abort every download while ingest read it as unlimited and retried forever.
+    monkeypatch.setenv("QUARRY_MAX_FILE_MB", "-1")
+    with pytest.raises(ValueError):
+        QuarryConfig.from_env()
+
+
+def test_an_unsafe_subject_on_a_record_reusing_a_row_is_still_refused(config):
+    """A rerun record whose subject climbs out must not reach the pool filename, even when its row exists."""
+    url = "https://img/reused.jpg"
+    net = FakeNet(assets={url: make_image_bytes(seed=43)})
+    with ProvenanceStore(config.db_path) as store:
+        engine = IngestEngine(config, store, net)
+        pid = engine._insert_pending(make_record(url), engine._upsert_subject(make_record(url)), "PD")
+        store.set_status(pid, "failed")  # a retryable row with a safe subject
+        out = engine.ingest_record(make_record(url, subject="../../escaped"))
+        assert out.status == "failed" and out.reason.startswith("unsafe_subject=")
+    home = config.images_dir.parent
+    outside = [p for p in home.parent.rglob("*.jpg") if not p.resolve().is_relative_to(config.images_dir.resolve())]
+    assert outside == []

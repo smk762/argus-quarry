@@ -15,12 +15,12 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 ### Fixed
 
 - README: the example host paths are placeholders now (`<ARCHIVE_ROOT>`)
-- Ingest refuses a record whose category, subject or source isn't a single path component (a `/`, `\`, `..` or NUL), before it downloads or writes a DB row. Those name the landing folder, pool filename and cache file, so `subject="../../x"` could land a file outside `images/`. Slice specs and seed subjects were already slugified; this guards every other `SourceRecord`.
+- Ingest refuses a record whose category, subject or source isn't a single path component (a `/`, `\`, `..` or NUL), before it downloads or writes a DB row. Those name the landing folder, pool filename and cache file, so `subject="../../x"` could land a file outside `images/`. Slice specs and seed subjects were already slugified; this guards every other `SourceRecord`. A rerun that reuses an existing row checks the record's own subject too, since it names the pool filename.
 
 - Licence labels match whole tokens only (#40), and a negated or qualified label ("Not CC0", "formerly CC0, now CC BY-NC", "public domain status unknown") is quarantined rather than accepted. Before, `pd` matched inside words, so "CC BY-SA, updated 2020" was accepted as PD.
 - Resumed downloads can no longer splice two different files together. A partial resumes only with its recorded ETag / Last-Modified sent as `If-Range`, and only when the `206` starts at the partial's length. A `.part` that was complete when the process died is finished on the server's `416` instead of failing forever. A gone or over-cap download leaves no partial in the cache.
 - `verify --repair` marks SHA256-mismatched rows failed (it only counted them), and `verify` exits 1 when it finds a problem it didn't repair.
-- `export` skips a row whose category, subject or filename would resolve outside `images/` or the destination.
+- `export` skips a row whose category, subject or filename would resolve outside `images/` or the destination. A re-export over an earlier symlink tree republishes its files rather than skipping every link into the pool. `/thumb` refuses such a row with a 404 instead of reading the file it names.
 - `export` refuses a destination that overlaps `$QUARRY_HOME` (inside it, around it, or the same dir); the raw pool and the published tree stay apart.
 - `fetch_public_domain_metadata.py` refuses photo and tar files in every part, whatever the part's own patterns say, so it can only ever archive metadata.
 - A legacy pool whose flat-layout file relocation failed part-way finishes it on the next read-write open (`PRAGMA user_version` marks it pending); before, the remaining files were stranded.
@@ -35,7 +35,7 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Changed
 
-- `max_file_bytes` is enforced (#46). It was reserved and capped nothing. Every download now aborts past it. Its default rises from 15 MiB to 100 MiB, so it rejects only runaway files and ordinary large originals are still downscaled by the megapixel cap. Set it with `QUARRY_MAX_FILE_MB` (`0` = unlimited). An over-cap row gets the new `oversize` status with the bytes seen, counts in the fetch summary, and is skipped on reruns until the cap is raised past that size.
+- `max_file_bytes` is enforced (#46). It was reserved and capped nothing. Every download now aborts past it. Its default rises from 15 MiB to 100 MiB, so it rejects only runaway files and ordinary large originals are still downscaled by the megapixel cap. Set it with `QUARRY_MAX_FILE_MB` (`0` = unlimited); a negative value is refused. An over-cap row gets the new `oversize` status with the bytes seen, counts in the fetch summary, and is skipped on reruns until the cap is raised past that size.
 - Release PRs into `main` now fail CI unless `CHANGELOG.md` has a dated, non-empty section newer than the latest tag, with `[Unreleased]` emptied and the compare link added (`scripts/check_changelog.py --release-pr`). A `v*` tag also checks for its section before anything publishes, so a missing section can no longer ship PyPI and the image without a GitHub Release, as v0.4.0 did.
 
 ## [0.4.0] - 2026-11-14

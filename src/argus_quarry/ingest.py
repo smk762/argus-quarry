@@ -59,8 +59,11 @@ def _unsafe_path_part(record: SourceRecord, existing: Photograph | None) -> str 
     DB row can't find it, so such a record is refused rather than rewritten: renaming it here would
     break the ``category``/``subject`` columns readers rebuild the path from.
     """
-    holder = existing or record
-    for field_name, value in (("category", holder.category), ("subject", holder.subject), ("source", record.source)):
+    # The record's own subject names the pool file even when a reused row names the folder, so both are checked.
+    checks = [("category", record.category), ("subject", record.subject), ("source", record.source)]
+    if existing is not None:
+        checks += [("category", existing.category), ("subject", existing.subject)]
+    for field_name, value in checks:
         if not value or value in {".", ".."} or any(c in value for c in "/\\\0"):
             return f"unsafe_{field_name}={value!r}"
     return None

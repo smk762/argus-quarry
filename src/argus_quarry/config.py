@@ -39,7 +39,7 @@ class QuarryConfig(BaseModel):
     # Per-download ceiling in bytes (0 = unlimited): a stream past it is aborted and the row
     # marked ``oversize``. A guard against runaway downloads, not a landing size: it is set
     # well above ordinary originals, which the megapixel cap downscales instead.
-    max_file_bytes: int = 100 * 1024 * 1024
+    max_file_bytes: int = Field(default=100 * 1024 * 1024, ge=0)
 
     # Total raw-pool ceiling in bytes. 0 = unlimited.
     max_total_bytes: int = 40 * 1024 * 1024 * 1024

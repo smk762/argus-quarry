@@ -73,6 +73,7 @@ from argus_quarry.archives import (
     split_collections,
 )
 from argus_quarry.config import QuarryConfig
+from argus_quarry.export import _safe_part
 from argus_quarry.models import DEFAULT_CATEGORY, Photograph
 from argus_quarry.store import ProvenanceStore, ProvenanceUnavailable, has_wal_content
 
@@ -344,7 +345,10 @@ def create_app(
         if ph is None or not ph.filename:
             raise HTTPException(status_code=404, detail=f"unknown photo id: {id}")
         # Pooled-file path, computed the same way export/verify do.
-        target = config.images_dir / ph.category / ph.subject / ph.filename
+        parts = (ph.category, ph.subject, ph.filename)
+        if not all(_safe_part(p) for p in parts):  # a row whose path would climb out of images/
+            raise HTTPException(status_code=404, detail=f"file missing for photo {id}: {ph.filename}")
+        target = config.images_dir.joinpath(*parts)
 
         def _render() -> bytes:
             # Opened in the worker thread: a hung $QUARRY_HOME mount must not stall the event loop.
