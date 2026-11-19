@@ -4,6 +4,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-19
+
 ### Added
 
 - `export` writes a `<stem>.json` sidecar beside each published file (licence, source and landing URLs, attribution, photographer, year, SHA256), so the published tree carries its provenance and argus-curator's `--carry-sidecars` carries it on. It names its `producer` (`argus-quarry`) and `schema`, holds a `provenance` block in argus-cortex's shared `Provenance` shape, and marks every `identity` photo `"likeness_consent": false`, so no quarry photo becomes a face source (#22). The sidecar is written first: a photo whose provenance can't be written is not published. argus-cortex is now a dependency.
@@ -137,7 +139,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 First release: provenance-first acquisition of public-domain / CC0 portraits from Wikimedia Commons into a SQLite-tracked raw pool, with export to a curator-ready tree.
 
-[Unreleased]: https://github.com/smk762/argus-quarry/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/smk762/argus-quarry/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/smk762/argus-quarry/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/smk762/argus-quarry/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/smk762/argus-quarry/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/smk762/argus-quarry/compare/v0.2.3...v0.3.0
