@@ -13,6 +13,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 - **Megalith upload year from Flickr photo ids** (#53). Every Megalith item gets an approximate `upload_year`, read at index time from a committed table of Flickr id/upload-time breakpoints. It is the year the photo was uploaded, never when it was taken. New filters `upload_year_min` / `upload_year_max` (HTTP and CLI `--upload-year-min` / `--upload-year-max`), `upload_year` on items, and `upload_dated`, `upload_year_range` and `date_sources.upload_year: "flickr-upload"` in facets. Measured against 351 held-out photos' posted dates: 87.8% exact year and 94.3% within one year (`docs/flickr-upload-calibration.md`). `scripts/calibrate_flickr_upload.py` rebuilds the table. It reads public photo pages without a key, or uses `flickr.photos.getInfo` when `QUARRY_FLICKR_API_KEY` is set.
 - `NetClient.get_text`, for pages that need the same pacing and retries as `get_json`.
 
+- **A hand-labelled film/digital set at the clip_era boundary** (#55). `scripts/film_digital_set.py` draws 298 colour PD12M photos that CLIP reads as 1980-1999 or 2000-now, stratified by confidence band, with iNaturalist left out (`docs/film-digital/sample.json`). It builds a blind labelling page and reports the precision of `clip_kind=photo&clip_era=2000-now` at `clip_era_min_conf` 0, 0.5 and 0.7, reweighted to the archive (`docs/film-digital/README.md`).
+
 ### Changed
 
 - The archive index schema is now 6 (the `clip_*` columns, then `upload_year`). Older indexes report `stale` until `archives index` rebuilds them.
