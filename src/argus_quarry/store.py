@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS photographs (
     remote_url     TEXT NOT NULL,
     fetched_from   TEXT,
     status         TEXT NOT NULL DEFAULT 'pending',
-    downloaded_at  TEXT
+    downloaded_at  TEXT,
+    captured_at    TEXT,
+    captured_at_source TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_photographs_remote ON photographs(remote_url);
@@ -337,6 +339,8 @@ class ProvenanceStore:
                     "fetched_from": "TEXT",
                     "status": "TEXT NOT NULL DEFAULT 'pending'",
                     "downloaded_at": "TEXT",
+                    "captured_at": "TEXT",
+                    "captured_at_source": "TEXT",
                 },
             )
         self._conn.executescript(_SCHEMA)
@@ -444,17 +448,35 @@ class ProvenanceStore:
         file_size: int,
         phash: str | None = None,
         fetched_from: str | None = None,
+        captured_at: str | None = None,
+        captured_at_source: str | None = None,
     ) -> None:
         """Record a landed file. ``fetched_from`` is the mirror URL that served the bytes, if not ``remote_url``.
+
+        ``captured_at`` is the capture date the file itself states, with ``captured_at_source`` naming
+        where it was read (``"exif"``).
 
         ``remote_url`` itself is never rewritten: it stays the full-resolution primary and the resume key.
         """
         self._conn.execute(
             """UPDATE photographs
                    SET status = 'complete', filename = ?, sha256 = ?, width = ?, height = ?,
-                       file_size = ?, phash = ?, downloaded_at = ?, fetched_from = ?
+                       file_size = ?, phash = ?, downloaded_at = ?, fetched_from = ?,
+                       captured_at = ?, captured_at_source = ?
                    WHERE id = ?""",
-            (filename, sha256, width, height, file_size, phash, _now(), fetched_from, photo_id),
+            (
+                filename,
+                sha256,
+                width,
+                height,
+                file_size,
+                phash,
+                _now(),
+                fetched_from,
+                captured_at,
+                captured_at_source if captured_at else None,
+                photo_id,
+            ),  # fmt: skip
         )
         self._conn.commit()
 
@@ -605,4 +627,7 @@ class ProvenanceStore:
             fetched_from=row["fetched_from"] if "fetched_from" in keys else None,
             status=row["status"],
             downloaded_at=row["downloaded_at"],
+            # A pool served read-only can't be migrated: tolerate one from before these columns.
+            captured_at=row["captured_at"] if "captured_at" in keys else None,
+            captured_at_source=row["captured_at_source"] if "captured_at_source" in keys else None,
         )

@@ -192,7 +192,8 @@ Two tables. Provenance-first; no CV columns.
 **photographs**
 `id · subject_id (fk) · category · title · photographer · year · source · source_url ·
 licence · attribution · width · height · file_size · filename · sha256 (unique) ·
-phash (nullable, informational) · remote_url · fetched_from (nullable) · status · downloaded_at`
+phash (nullable, informational) · remote_url · fetched_from (nullable) · status · downloaded_at ·
+captured_at (nullable, ISO 8601) · captured_at_source (nullable: `exif`)`
 
 - `sha256` is `UNIQUE` → exact-dup ingest is a no-op (idempotent reruns).
 - `status` tracks resumability: `pending | downloading | complete | failed`, plus

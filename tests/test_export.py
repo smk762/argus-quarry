@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import FakeNet, make_image_bytes, make_record
+from conftest import FakeNet, make_exif_jpeg, make_image_bytes, make_record
 
 from argus_quarry.export import export_tree
 from argus_quarry.ingest import IngestEngine
@@ -197,3 +197,17 @@ def test_same_stem_files_in_one_subject_never_share_a_sidecar(config, tmp_path):
     assert not (published / clash).exists()
     meta = json.loads((published / first.filename).with_suffix(".json").read_text())
     assert meta["sha256"] == first.sha256
+
+
+def test_the_sidecar_carries_the_capture_date_and_its_source(config, tmp_path):
+    import json
+
+    url = "https://img/dated.jpg"
+    net = FakeNet(assets={url: make_exif_jpeg(original="1975:03:09 10:11:12")})
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        IngestEngine(config, store, net).ingest_record(make_record(url, licence="CC0"))
+        export_tree(config, store, dest, mode="copy")
+    (sidecar,) = dest.rglob("*.json")
+    meta = json.loads(sidecar.read_text())
+    assert meta["captured_at"] == "1975-03-09T10:11:12" and meta["captured_at_source"] == "exif"
