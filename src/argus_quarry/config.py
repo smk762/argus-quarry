@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 DEFAULT_USER_AGENT = "argus-quarry/0.1 (https://github.com/smk762/argus-quarry)"
 
@@ -61,6 +61,11 @@ class QuarryConfig(BaseModel):
     # pool. Off by default, the demo-safe posture forge/proof/atlas share; when
     # off the server only hands back the slice JSON + CLI command.
     allow_fetch: bool = False
+
+    # Optional Flickr API key (``QUARRY_FLICKR_API_KEY``). With it, Flickr upload dates come from
+    # ``flickr.photos.getInfo``; without it, from the public photo pages. A SecretStr, so it never
+    # shows in a repr, a log line or an error.
+    flickr_api_key: SecretStr | None = None
 
     def rate_for(self, source: str) -> SourceRate:
         return self.rates.get(source, SourceRate())
@@ -133,6 +138,10 @@ class QuarryConfig(BaseModel):
 
         if os.environ.get("QUARRY_ALLOW_FETCH", "").strip().lower() in {"1", "true", "yes", "on"}:
             data["allow_fetch"] = True
+
+        key = os.environ.get("QUARRY_FLICKR_API_KEY", "").strip()
+        if key:
+            data["flickr_api_key"] = SecretStr(key)
 
         data.update(overrides)
         return cls(**data)

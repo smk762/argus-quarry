@@ -546,6 +546,10 @@ def archives_search(
     clip_era: list[str] | None = Option(None, "--clip-era", help="CLIP zero-shot era, e.g. 2000-now (repeatable)"),
     clip_kind: list[str] | None = Option(None, "--clip-kind", help="CLIP zero-shot kind: photo, artwork, document"),
     clip_era_min_conf: float | None = Option(None, "--clip-era-min-conf", min=0, max=1, help="Era probability >="),
+    upload_year_min: int | None = Option(
+        None, "--upload-year-min", help="Year UPLOADED >= (Megalith, from the Flickr id; not when it was taken)"
+    ),
+    upload_year_max: int | None = Option(None, "--upload-year-max", help="Year uploaded <="),
     limit: int = Option(20, "--limit", help="Rows to print"),
 ) -> None:
     """Print a page of matches — a quick terminal check before saving a slice."""
@@ -563,6 +567,8 @@ def archives_search(
             clip_eras=clip_era or [],
             clip_kinds=clip_kind or [],
             clip_era_min_conf=clip_era_min_conf,
+            upload_year_min=upload_year_min,
+            upload_year_max=upload_year_max,
         )
         page = get_archive(name, QuarryConfig.from_env()).search(query, limit=limit)
     for item in page["items"]:

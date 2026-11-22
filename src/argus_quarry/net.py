@@ -98,6 +98,9 @@ class NetClient:
         ``httpx.HTTPStatusError`` for any other non-transient status. Retrying those only spends the
         rate limit the source's other workers share.
         """
+        return self._get(url, params=params, source=source).json()
+
+    def _get(self, url: str, *, params: dict | None, source: str) -> httpx.Response:
         last_exc: Exception | None = None
         for attempt in range(self.config.max_retries):
             self._bucket(source).take()
@@ -110,12 +113,16 @@ class NetClient:
                 if resp.status_code in GONE_STATUS:
                     raise RemoteGone(url, resp.status_code)
                 resp.raise_for_status()  # any other error status is permanent: raised, not retried
-                return resp.json()
+                return resp
             except httpx.TransportError as exc:
                 last_exc = exc
                 logger.warning("http_error", url=url, error=str(exc), attempt=attempt)
                 self._sleep_backoff(attempt)
         raise RuntimeError(f"GET {url} failed after {self.config.max_retries} attempts") from last_exc
+
+    def get_text(self, url: str, *, params: dict | None = None, source: str = "default") -> str:
+        """GET a page as text, retrying transient failures; permanent errors raise as in :meth:`get_json`."""
+        return self._get(url, params=params, source=source).text
 
     def download(
         self, url: str, dest: Path, *, source: str = "default", max_bytes: int | None = None

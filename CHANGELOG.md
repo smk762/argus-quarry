@@ -10,9 +10,12 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 - **CLIP era and kind for PD12M** (#19). `argus-quarry archives era pd12m` scores every image's published CLIP ViT-L/14 embedding against committed, sha256-pinned prompt vectors encoded with the matching text tower. It needs no text model at index or query time. The run is chunked and resumable, and `--limit-rows` scores a sample. New filters `clip_eras`, `clip_kinds`, `clip_era_min_conf` and `clip_kind_min_conf` (HTTP `clip_era=`, `clip_kind=`, …; CLI `--clip-era`, `--clip-kind`), new item fields `clip_era`, `clip_era_conf`, `clip_kind` and `clip_kind_conf`, `clip_eras` / `clip_kinds` / `date_sources` in facets, and `era` in status. "Photo, digital era" is `clip_kind=photo&clip_era=2000-now`. Calibration against the caption-dated items and collection references is in `docs/era-calibration.md`, and `scripts/calibrate_era.py` reproduces it.
 
+- **Megalith upload year from Flickr photo ids** (#53). Every Megalith item gets an approximate `upload_year`, read at index time from a committed table of Flickr id/upload-time breakpoints. It is the year the photo was uploaded, never when it was taken. New filters `upload_year_min` / `upload_year_max` (HTTP and CLI `--upload-year-min` / `--upload-year-max`), `upload_year` on items, and `upload_dated`, `upload_year_range` and `date_sources.upload_year: "flickr-upload"` in facets. Measured against 351 held-out photos' posted dates: 87.8% exact year and 94.3% within one year (`docs/flickr-upload-calibration.md`). `scripts/calibrate_flickr_upload.py` rebuilds the table. It reads public photo pages without a key, or uses `flickr.photos.getInfo` when `QUARRY_FLICKR_API_KEY` is set.
+- `NetClient.get_text`, for pages that need the same pacing and retries as `get_json`.
+
 ### Changed
 
-- The archive index schema is now 5 (the `clip_*` columns). Older indexes report `stale` until `archives index` rebuilds them.
+- The archive index schema is now 6 (the `clip_*` columns, then `upload_year`). Older indexes report `stale` until `archives index` rebuilds them.
 - `NetClient.get_json` no longer retries a permanent error: `403`/`404`/`410` raise `RemoteGone` and any other non-transient status raises `httpx.HTTPStatusError` on the first response, instead of `RuntimeError` after every retry and backoff.
 - The archive thumb fetch no longer reads the `HTTP(S)_PROXY` environment: it now always connects to the address it has checked.
 

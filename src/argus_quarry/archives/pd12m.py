@@ -55,7 +55,8 @@ class PD12MArchive(Archive):
                      ELSE license END AS licence,
                 source AS collection,
                 mime_type AS mime,
-                f.start + p.file_row_number AS pos
+                f.start + p.file_row_number AS pos,
+                CAST(NULL AS INTEGER) AS upload_year
             FROM read_parquet({files}, filename = true, file_row_number = true) p
             JOIN files f ON f.file_name = p.filename
         """
