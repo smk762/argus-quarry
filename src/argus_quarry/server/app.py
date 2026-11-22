@@ -22,7 +22,7 @@ Routes:
     GET  /archives/{name}/facets          -> collections / licences / mimes with counts
     GET  /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=
                                  &min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&clip_era=&clip_era_min_conf=
-                                 &clip_kind=&clip_kind_min_conf=&ids=&sort=&limit=&offset=
+                                 &clip_kind=&clip_kind_min_conf=&upload_year_min=&upload_year_max=&ids=&sort=&limit=&offset=
                                  &semantic=<text> | &similar_to=<id>   -> ranked by CLIP similarity, each item a score
     GET  /archives/{name}/items/{id}
     GET  /archives/{name}/thumb?id=&size= -> image/webp (PD12M) or a redirect to Flickr's own small size
@@ -409,6 +409,10 @@ def _archive_query(
     clip_era_min_conf: float | None = Query(None, ge=0, le=1, description="CLIP zero-shot era probability >="),
     clip_kind: str | None = Query(None, description="comma-separated CLIP zero-shot kinds: photo,artwork,document"),
     clip_kind_min_conf: float | None = Query(None, ge=0, le=1, description="CLIP zero-shot kind probability >="),
+    upload_year_min: int | None = Query(
+        None, ge=-INT_MAX, le=INT_MAX, description="year UPLOADED >= (Megalith, from the Flickr id; not when taken)"
+    ),
+    upload_year_max: int | None = Query(None, ge=-INT_MAX, le=INT_MAX, description="year uploaded <="),
     ids: str | None = Query(None, description="comma-separated explicit selection"),
     sort: Literal["shuffle", "largest"] = Query("shuffle", description="ignored when semantic/similar_to rank"),
     semantic: str | None = Query(
@@ -436,6 +440,8 @@ def _archive_query(
             clip_era_min_conf=clip_era_min_conf,
             clip_kinds=_split_csv(clip_kind) or [],
             clip_kind_min_conf=clip_kind_min_conf,
+            upload_year_min=upload_year_min,
+            upload_year_max=upload_year_max,
             ids=_split_csv(ids) or [],
             sort=sort,
             semantic=semantic,

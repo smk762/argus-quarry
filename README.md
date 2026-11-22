@@ -360,6 +360,18 @@ argus-quarry archives search pd12m --clip-kind photo --clip-era 2000-now --clip-
 - **Precision** is measured on a held-out half of the 61k caption-dated items, plus collection-level references, in [docs/era-calibration.md](docs/era-calibration.md). Read it before you trust a bucket. In short, photo versus digital holds up: 99.2% of iNaturalist photos read as photo and 2000-now, against 0.3% of historic-archive photos. The finer periods are coarse, with about 62% balanced accuracy.
 - **The run** streams the embeddings a chunk at a time (65,536 rows, about 200 MB), writes each chunk as it goes, and resumes after an interruption. It reads the local float16 copy from `archives index --embeddings` when there is one, else the archived `.npy` files. From the NAS share it scored 1M rows in 40 s, so a full pass takes about 9 minutes plus a 1-minute reindex. Its peak RSS was 3.3 GB, all of it the reindex. Scores live in `$QUARRY_HOME/cache/archives/pd12m.era.parquet`, and every `archives index` joins them back on the embedding row.
 
+### Upload year (Megalith)
+
+Megalith publishes no embeddings, so CLIP era can't date it. Every item does have a Flickr photo id, though, and Flickr gives ids in increasing order as photos are uploaded. A committed table of id/upload-time breakpoints gives every Megalith item an approximate **`upload_year`** at index time, with no request.
+
+```bash
+argus-quarry archives search megalith --upload-year-min 2019 --q "street"
+```
+
+- **It is the upload year, never the year the photo was taken.** Flickr Commons institutions upload 19th-century photographs today, and scanned film is uploaded years after it was shot. The field, the filters (`upload_year_min` / `upload_year_max`) and facets' `date_sources` (`flickr-upload`) all say so.
+- **Accuracy.** Measured against the posted dates of 351 held-out Megalith photos: 87.8% exact year, 94.3% within one year, median error 14 days. It is coarser before 2011 (61% exact). See [docs/flickr-upload-calibration.md](docs/flickr-upload-calibration.md).
+- **The table** is rebuilt by `scripts/calibrate_flickr_upload.py`. It reads upload dates from public Flickr photo pages, keyless, or from `flickr.photos.getInfo` when `QUARRY_FLICKR_API_KEY` is set (Flickr issues keys only to Pro accounts). Rebuild the Megalith index afterwards.
+
 Caption terms (`q`, `exclude`, `--q`, `--exclude`) are case-insensitive substrings. Every term in `q` must appear and none in `exclude` may; `"quoted phrases"` stay whole, and a leading `-` in `q` excludes a term (`harbor boats -painting`). An uncaptioned item doesn't mention anything, so an exclusion keeps it.
 
 A slice is a query plus where it lands:
@@ -414,8 +426,8 @@ The server exposes the same thing over HTTP. Every route is `GET` except the fet
 | Route | Returns |
 |---|---|
 | `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`, and `semantic`: `{indexed, vectors, model, built_at}` or `null` when the archive has no embeddings, and `era`: `{scored, of, prompts_sha256, current, built_at, source}` or `null`) and `fetch_allowed` |
-| `GET /archives/{name}/facets` | collections, licences and MIME types with counts; `clip_eras` / `clip_kinds` with counts, `clip_scored`, and `date_sources` (which fields are caption-derived and which are CLIP zero-shot) |
-| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&clip_era=&clip_era_min_conf=&clip_kind=&clip_kind_min_conf=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
+| `GET /archives/{name}/facets` | collections, licences and MIME types with counts; `clip_eras` / `clip_kinds` with counts, `clip_scored`, `upload_dated` / `upload_year_range`, and `date_sources` (which fields are caption-derived, CLIP zero-shot or Flickr upload) |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&clip_era=&clip_era_min_conf=&clip_kind=&clip_kind_min_conf=&upload_year_min=&upload_year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |

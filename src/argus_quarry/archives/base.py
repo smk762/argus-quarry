@@ -16,6 +16,7 @@ and builds one DuckDB index under ``$QUARRY_HOME/cache/archives/`` with a common
     mime        image MIME type, NULL when unknown
     rnd         a fixed random key, so "shuffle" pages are stable and diverse
     pos         the item's row in the archive's published embeddings, NULL when it has none
+    upload_year the year the photo was uploaded (Megalith: from its Flickr id), never when it was taken
 
 Searching is read-only. A *slice* (:class:`SliceSpec`) is a saved query plus the
 category/subject it lands under; :meth:`Archive.records` turns it into the same
@@ -42,6 +43,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from argus_quarry.archives import era as ze
 from argus_quarry.archives import semantic as sem
+from argus_quarry.archives import upload_year as uy
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import DEFAULT_CATEGORY, SourceRecord, normalise_category, slugify_name
 
@@ -56,7 +58,7 @@ DEFAULT_BUILD_MEMORY = "4GB"
 INT_MAX = 2**31 - 1
 ITEM_FIELDS = (
     "id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime",
-    "tone", "medium", "year", "clip_era", "clip_era_conf", "clip_kind", "clip_kind_conf",
+    "tone", "medium", "year", "clip_era", "clip_era_conf", "clip_kind", "clip_kind_conf", "upload_year",
 )  # fmt: skip
 #: Index columns with no source file behind them (an archive without embeddings, or no era scores yet).
 _NO_ERA = (
@@ -67,7 +69,8 @@ _NO_ERA = (
 #: Bumped whenever the ``items`` columns, or how they are derived, change; an older index asks to be
 #: rebuilt. 3: "The photo shows …" openers count as medium photo. 4: ``pos`` (embedding row).
 #: 5: ``clip_era`` / ``clip_kind`` (+ confidences) joined from the zero-shot era scores (#19).
-INDEX_SCHEMA = 5
+#: 6: ``upload_year`` (Megalith: approximate Flickr upload year from the photo id, #53).
+INDEX_SCHEMA = 6
 #: A semantic query ranks at most this many items (the nearest neighbours that pass the filters).
 SEMANTIC_MAX = 5000
 
@@ -172,6 +175,14 @@ class ArchiveQuery(BaseModel):
         default_factory=list, description=f"CLIP zero-shot picture kind, any of {', '.join(ze.KINDS)}"
     )
     clip_kind_min_conf: float | None = Field(None, ge=0, le=1, description="CLIP zero-shot kind probability >=")
+    upload_year_min: int | None = Field(
+        None,
+        ge=-INT_MAX,
+        le=INT_MAX,
+        description="year the photo was UPLOADED >= (Megalith: approximate, from its Flickr id; not when it was "
+        "taken; items without one are excluded)",
+    )
+    upload_year_max: int | None = Field(None, ge=-INT_MAX, le=INT_MAX, description="year the photo was uploaded <=")
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
     sort: Literal["shuffle", "largest"] = Field("shuffle", description="ignored by semantic/similar_to queries")
     semantic: str | None = Field(
@@ -639,6 +650,12 @@ class Archive(ABC):
         if query.year_max is not None:
             clauses.append("year <= ?")
             params.append(query.year_max)
+        if query.upload_year_min is not None:
+            clauses.append("upload_year >= ?")
+            params.append(query.upload_year_min)
+        if query.upload_year_max is not None:
+            clauses.append("upload_year <= ?")
+            params.append(query.upload_year_max)
         if query.min_width:
             clauses.append("width >= ?")
             params.append(query.min_width)
@@ -782,6 +799,9 @@ class Archive(ABC):
                 "SELECT medium, count(*) FROM items WHERE medium IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
             ).fetchall()
             dated, year_lo, year_hi = con.execute("SELECT count(year), min(year), max(year) FROM items").fetchone()
+            up_dated, up_lo, up_hi = con.execute(
+                "SELECT count(upload_year), min(upload_year), max(upload_year) FROM items"
+            ).fetchone()
             clip_eras = con.execute(
                 "SELECT clip_era, count(*) FROM items WHERE clip_era IS NOT NULL GROUP BY 1"
             ).fetchall()
@@ -801,7 +821,14 @@ class Archive(ABC):
             "dated": dated,
             "year_range": [year_lo, year_hi] if dated else None,
             # Where each date-ish field comes from, so a UI can say so next to the filter.
-            "date_sources": {"year": "caption", "clip_era": "clip-zero-shot", "clip_kind": "clip-zero-shot"},
+            "date_sources": {
+                "year": "caption",
+                "clip_era": "clip-zero-shot",
+                "clip_kind": "clip-zero-shot",
+                "upload_year": uy.DATE_SOURCE,
+            },
+            "upload_dated": up_dated,
+            "upload_year_range": [up_lo, up_hi] if up_dated else None,
             "clip_scored": sum(n for _, n in clip_eras),
             "clip_eras": [{"name": e, "count": dict(clip_eras).get(e, 0)} for e in ze.ERAS if e in dict(clip_eras)],
             "clip_kinds": [{"name": c, "count": n} for c, n in clip_kinds],

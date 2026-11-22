@@ -167,7 +167,12 @@ def test_era_scores_join_the_index_and_filter(cfg):
     assert facets["clip_scored"] == N
     assert [e["name"] for e in facets["clip_eras"]] == list(ze.ERAS)  # oldest first
     assert {k["name"] for k in facets["clip_kinds"]} == set(ze.KINDS)
-    assert facets["date_sources"] == {"year": "caption", "clip_era": "clip-zero-shot", "clip_kind": "clip-zero-shot"}
+    assert facets["date_sources"] == {
+        "year": "caption",
+        "clip_era": "clip-zero-shot",
+        "clip_kind": "clip-zero-shot",
+        "upload_year": "flickr-upload",
+    }
 
 
 def test_unknown_era_or_kind_is_a_validation_error():
