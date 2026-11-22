@@ -258,12 +258,56 @@ def test_stale_pointer_reads_as_not_indexed(built):
     assert get_archive("pd12m", built).status()["semantic"]["indexed"] is False
 
 
-@pytest.mark.parametrize("bad", [1, ["x"], {"a": 1}, "/", "..", "../pd12m", "a/b"])
+@pytest.mark.parametrize("bad", [1, ["x"], {"a": 1}, "/", "..", "../pd12m", "a/b", "\x00", "pd12m.semantic\x00x"])
 def test_pointer_dir_must_be_one_build_dir_under_root(built, bad):
     pointer = built.archive_index_dir / "pd12m.semantic.json"
     meta = json.loads(pointer.read_text())
     pointer.write_text(json.dumps({**meta, "dir": bad}))
     assert sem.read_pointer(built.archive_index_dir, "pd12m") is None
+
+
+@pytest.mark.parametrize(("total", "want"), [(600, 600), (600, 599), (10_000, 9_000), (100_000, 10_240), (5, 1)])
+def test_training_spans_never_overlap_and_reach_the_tail(total, want):
+    spans = sem._train_spans(total, want)
+    assert all(lo < hi for lo, hi in spans)
+    assert all(a_hi <= b_lo for (_, a_hi), (b_lo, _) in zip(spans, spans[1:], strict=False))  # no row twice
+    assert sum(hi - lo for lo, hi in spans) <= want
+    assert spans[-1][0] >= total - total // len(spans) - 1  # the last block sits in the archive's last stretch
+
+
+def test_an_oversized_train_rows_is_clamped_to_the_matrix(pd12m_root, tmp_path, monkeypatch):
+    """train_rows beyond the row count must not re-read the matrix block after block."""
+    files = sorted((pd12m_root / "embeddings" / "embeddings").glob("*.npy"))
+    read: list[tuple[int, int]] = []
+    real = sem._read_rows
+
+    def spy(sources, starts, lo, hi):
+        read.append((lo, hi))
+        return real(sources, starts, lo, hi)
+
+    trained: list[int] = []
+    faiss = pytest.importorskip("faiss")
+    real_factory = faiss.index_factory
+
+    def factory(*a, **k):
+        index = real_factory(*a, **k)
+        real_train = index.train
+
+        def train(x):
+            trained.append(len(x))
+            return real_train(x)
+
+        index.train = train
+        return index
+
+    monkeypatch.setattr(sem, "_read_rows", spy)
+    monkeypatch.setattr(faiss, "index_factory", factory)
+    sem.build_vector_index(
+        files, tmp_path, "pd12m", expected_rows=N, model="test", factory="IVF8,Flat", train_rows=N * 50
+    )
+    assert trained == [N]  # every row once, not N * 50 rows of duplicates
+    rows = sorted(r for lo, hi in read[: len(sem._train_spans(N, N))] for r in range(lo, hi))
+    assert rows == list(range(N))
 
 
 def test_search_leaves_the_callers_mask_alone(built):

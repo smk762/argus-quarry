@@ -724,6 +724,44 @@ def test_archive_original_fetch_refuses_a_redirect_to_an_internal_address(archiv
     assert seen == ["https://cdn.test/a.jpg"]  # the metadata endpoint was never requested
 
 
+def _rebinding_env(monkeypatch, answers: list[str]):
+    """A resolver that hands out ``answers`` in turn (the last one repeats), and a socket layer that never connects."""
+    import socket
+
+    import argus_quarry.server.app as server_app
+
+    queue = list(answers)
+
+    def fake_getaddrinfo(host, port, *a, **k):
+        addr = queue.pop(0) if len(queue) > 1 else queue[0]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (addr, port))]
+
+    connects: list[tuple] = []
+
+    def fake_create_connection(address, *a, **k):
+        connects.append(address)
+        raise ConnectionRefusedError("test: no network")
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(socket, "create_connection", fake_create_connection)
+    return server_app, connects
+
+
+def test_archive_original_fetch_is_not_fooled_by_dns_rebinding(archives_config, monkeypatch):
+    """The check sees a public IP, the connect would see localhost: the connect must re-vet and refuse."""
+    server_app, connects = _rebinding_env(monkeypatch, ["93.184.216.34", "127.0.0.1"])
+    with pytest.raises(server_app.UnsafeURL):
+        server_app._fetch_original(archives_config, "http://rebind.test/x.jpg")
+    assert connects == []  # no socket was ever opened, to localhost or anywhere
+
+
+def test_archive_original_fetch_connects_to_the_address_it_vetted(archives_config, monkeypatch):
+    server_app, connects = _rebinding_env(monkeypatch, ["93.184.216.34"])
+    with pytest.raises(httpx.ConnectError):
+        server_app._fetch_original(archives_config, "http://cdn.test/x.jpg")
+    assert connects and all(addr == ("93.184.216.34", 80) for addr in connects)  # the IP, never the hostname
+
+
 def test_a_second_fetch_while_one_runs_is_409(archives_config, monkeypatch):
     import threading
 

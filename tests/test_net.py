@@ -115,3 +115,121 @@ def test_every_request_is_paced_and_carries_the_user_agent(tmp_path, monkeypatch
     assert net.get_json("https://api.test/x", source="commons") == {"ok": True}
     net.download(URL, tmp_path / "a.jpg", source="commons")
     assert taken == ["commons"] * len(seen) and len(seen) == 3 and set(seen) == {"ua"}
+
+
+def _gzip_server(requests: list[httpx.Request], *, etag: str | None = ETAG):
+    """An origin that gzips every body regardless of Accept-Encoding, ranges included."""
+    import gzip
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        headers = {"content-encoding": "gzip", **({"etag": etag} if etag else {})}
+        rng = request.headers.get("range")
+        if rng is None:
+            return httpx.Response(200, content=gzip.compress(BODY), headers=headers)
+        first, last = (int(g) if g else None for g in re.match(r"bytes=(\d+)-(\d*)", rng).groups())
+        last = len(BODY) - 1 if last is None else last
+        headers["content-range"] = f"bytes {first}-{last}/{len(BODY)}"
+        return httpx.Response(206, content=gzip.compress(BODY[first : last + 1]), headers=headers)
+
+    return handler
+
+
+def _mock_net(tmp_path, handler) -> NetClient:
+    cfg = QuarryConfig(home=tmp_path / "q", backoff_base=0.0, max_retries=3)
+    return NetClient(cfg, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_byte_counted_requests_ask_for_the_identity_encoding(tmp_path):
+    """Range offsets count stored bytes; a transparently-decoded body would count different ones."""
+    server = Server()
+    with _net(tmp_path, server) as net:
+        net.download(URL, tmp_path / "a.jpg")
+        net.read_range(URL, 0, 10)
+    assert server.requests and all(r.headers["accept-encoding"] == "identity" for r in server.requests)
+
+
+def test_an_interrupted_encoded_download_is_never_resumed_from_decoded_bytes(tmp_path):
+    """A .part of decoded bytes is no offset into the encoded resource: restart, never Range from it."""
+    import gzip
+    import os
+
+    body = os.urandom(200_000)  # incompressible, so a cut stream still decodes to a sizeable prefix
+    packed = gzip.compress(body)
+    requests: list[httpx.Request] = []
+
+    class CutStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield packed[: len(packed) // 2]
+            raise httpx.ReadError("connection reset")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        headers = {"content-encoding": "gzip", "etag": ETAG}
+        if len(requests) == 1:
+            return httpx.Response(200, stream=CutStream(), headers=headers)
+        if "range" in request.headers:  # what a resume would get: a gzip fragment of the tail
+            first = int(re.match(r"bytes=(\d+)-", request.headers["range"]).group(1))
+            headers["content-range"] = f"bytes {first}-{len(body) - 1}/{len(body)}"
+            return httpx.Response(206, content=gzip.compress(body[first:]), headers=headers)
+        return httpx.Response(200, content=packed, headers=headers)
+
+    dest = tmp_path / "a.jpg"
+    with _mock_net(tmp_path, handler) as net:
+        net.download(URL, dest)
+    assert len(requests) == 2 and "range" not in requests[1].headers
+    assert dest.read_bytes() == body
+
+
+def test_an_encoded_byte_range_is_refused_not_miscounted(tmp_path):
+    import pytest
+
+    requests: list[httpx.Request] = []
+    with _mock_net(tmp_path, _gzip_server(requests)) as net:
+        with pytest.raises(RuntimeError, match="failed after"):
+            net.read_range(URL, 100, 10)
+        with pytest.raises(RuntimeError, match="failed after"):
+            net.download(f"{URL}#bytes=100-109", tmp_path / "b.jpg")
+    assert not (tmp_path / "b.jpg").exists() and not (tmp_path / "b.jpg.part").exists()
+    assert all(r.headers["accept-encoding"] == "identity" for r in requests)  # asked; the server ignored it
+
+
+def test_an_encoded_resume_is_never_appended(tmp_path):
+    requests: list[httpx.Request] = []
+    dest = _partial(tmp_path, BODY[:100], ETAG)
+    with _mock_net(tmp_path, _gzip_server(requests)) as net:
+        net.download(URL, dest)
+    assert dest.read_bytes() == BODY  # restarted from 0, not a gzip fragment spliced onto the .part
+    assert requests[0].headers["range"] == "bytes=100-" and "range" not in requests[1].headers
+
+
+def test_get_json_never_retries_a_permanent_client_error(tmp_path):
+    import pytest
+
+    from argus_quarry.net import RemoteGone
+
+    calls: list[int] = []
+
+    def handler(status: int):
+        def h(request: httpx.Request) -> httpx.Response:
+            calls.append(status)
+            return httpx.Response(status, json={})
+
+        return h
+
+    for status, exc in ((404, RemoteGone), (403, RemoteGone), (410, RemoteGone), (400, httpx.HTTPStatusError)):
+        calls.clear()
+        with _mock_net(tmp_path, handler(status)) as net, pytest.raises(exc):
+            net.get_json("https://api.test/x", source="commons")
+        assert calls == [status]  # one request: no backoff, no extra rate-limit tokens
+
+
+def test_get_json_still_retries_a_transient_status(tmp_path):
+    statuses = iter([503, 200])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = next(statuses)
+        return httpx.Response(status, json={"ok": True})
+
+    with _mock_net(tmp_path, handler) as net:
+        assert net.get_json("https://api.test/x") == {"ok": True}
