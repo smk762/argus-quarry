@@ -219,28 +219,53 @@ class ProvenanceStore:
         A column-level UNIQUE can't be dropped in place in SQLite, so recreate the
         table (ids preserved). Done with FK enforcement off since `photographs`
         references `subjects(id)` and those ids are carried over unchanged.
+
+        The copy-drop-rename runs in one transaction (SQLite DDL is transactional):
+        ``executescript`` would otherwise autocommit each statement, and a failure
+        between the DROP and the RENAME would leave no `subjects` table, orphaning
+        every photograph's subject.
         """
         self._conn.commit()
-        self._conn.execute("PRAGMA foreign_keys=OFF")
-        self._conn.executescript(
-            """
-            CREATE TABLE subjects_new (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                name         TEXT NOT NULL,
-                category     TEXT NOT NULL DEFAULT 'identity',
-                wikidata_id  TEXT,
-                birth_year   INTEGER,
-                death_year   INTEGER,
-                occupation   TEXT,
-                UNIQUE(name, category)
-            );
-            INSERT INTO subjects_new (id, name, category, wikidata_id, birth_year, death_year, occupation)
-                SELECT id, name, category, wikidata_id, birth_year, death_year, occupation FROM subjects;
-            DROP TABLE subjects;
-            ALTER TABLE subjects_new RENAME TO subjects;
-            """
-        )
-        self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.execute("PRAGMA foreign_keys=OFF")  # a no-op inside a transaction: set it before BEGIN
+        try:
+            self._conn.executescript(
+                """
+                BEGIN;
+                DROP TABLE IF EXISTS subjects_new;
+                CREATE TABLE subjects_new (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name         TEXT NOT NULL,
+                    category     TEXT NOT NULL DEFAULT 'identity',
+                    wikidata_id  TEXT,
+                    birth_year   INTEGER,
+                    death_year   INTEGER,
+                    occupation   TEXT,
+                    UNIQUE(name, category)
+                );
+                INSERT INTO subjects_new (id, name, category, wikidata_id, birth_year, death_year, occupation)
+                    SELECT id, name, category, wikidata_id, birth_year, death_year, occupation FROM subjects;
+                DROP TABLE subjects;
+                ALTER TABLE subjects_new RENAME TO subjects;
+                COMMIT;
+                """
+            )
+        except BaseException:
+            if self._conn.in_transaction:
+                self._conn.execute("ROLLBACK")
+            raise
+        finally:
+            self._conn.execute("PRAGMA foreign_keys=ON")
+
+    def _rescue_half_swapped_subjects(self) -> None:
+        """Finish a subjects rebuild an older version left between its DROP and its RENAME.
+
+        Before the rebuild was transactional, a crash there left the rows in `subjects_new`
+        and no `subjects`; the CREATE TABLE IF NOT EXISTS would then add an empty one and
+        orphan every photograph. Rename the stranded copy back first.
+        """
+        if self._table_exists("subjects_new") and not self._table_exists("subjects"):
+            self._conn.execute("ALTER TABLE subjects_new RENAME TO subjects")
+            self._conn.commit()
 
     def _relocate_legacy_files(self) -> None:
         """Move landed files from flat `images/<subject>/` into `images/<category>/<subject>/`.
@@ -269,6 +294,7 @@ class ProvenanceStore:
         # photograph columns, a flat image layout, and UNIQUE(name). Rename/extend
         # in place so existing pools keep their provenance, then let the CREATE
         # TABLE IF NOT EXISTS below cover fresh installs.
+        self._rescue_half_swapped_subjects()
         legacy = self._table_exists("people") and not self._table_exists("subjects")
         if legacy:
             # The schema changes below persist at once (DDL), but the file moves at the end can

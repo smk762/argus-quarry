@@ -98,13 +98,46 @@ def _write_provenance(ph: Photograph, dst: Path) -> None:
 
 
 def _publish_one(src: Path, dst: Path, mode: str) -> None:
+    """Publish ``src`` at ``dst`` atomically: stage it under a temp name, then swap it in.
+
+    A failure leaves whatever ``dst`` was before (an earlier export's file) untouched.
+    """
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists() or dst.is_symlink():
-        dst.unlink()
-    if mode == "copy":
-        shutil.copy2(src, dst)
-    else:  # symlink
-        dst.symlink_to(src.resolve())
+    staged = dst.with_name(f".{dst.name}.{os.getpid()}.tmp")
+    try:
+        staged.unlink(missing_ok=True)
+        if mode == "copy":
+            shutil.copy2(src, staged)
+        else:  # symlink
+            staged.symlink_to(src.resolve())
+        os.replace(staged, dst)  # replaces a symlink itself, never its target
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+#: Sidecar suffixes that share a published file's stem without being another published file.
+_SIDECAR_SUFFIXES = frozenset({".json", ".txt", ".xmp", ".tmp"})
+
+
+def _stem_taken(dst: Path, claimed: dict[Path, str]) -> bool:
+    """True if another published file already owns ``dst``'s ``<stem>.json`` sidecar.
+
+    ``a.jpg`` and ``a.tif`` in one subject would share ``a.json``; the second would overwrite the
+    first's licence record. Checks this run's claims and files an earlier export left behind.
+    """
+    sidecar = provenance_path(dst)
+    if claimed.setdefault(sidecar, dst.name) != dst.name:
+        return True
+    try:
+        siblings = list(dst.parent.iterdir())
+    except OSError:  # no dest dir yet: nothing published there
+        return False
+    return any(
+        p.name != dst.name and not p.name.startswith(".") and p.stem == dst.stem
+        and p.suffix.lower() not in _SIDECAR_SUFFIXES
+        for p in siblings
+    )  # fmt: skip
 
 
 def export_tree(
@@ -120,7 +153,8 @@ def export_tree(
     """Publish complete photographs into ``dest`` as ``<category>/<subject>/<file>``.
 
     Each published file gets a ``<stem>.json`` sidecar (:func:`provenance_record`), written first:
-    a photo whose provenance can't be written is not published.
+    a photo whose provenance can't be written is not published. A second file with the same stem in
+    one subject is skipped, since it would share (and overwrite) that sidecar.
     """
     dest_root = Path(dest)
     # The raw pool and the published tree stay apart: curator scans dest, and must never see the pool's
@@ -129,6 +163,7 @@ def export_tree(
     if _within(dest_root, home) or _within(home, dest_root):
         raise ValueError(f"export dest {dest_root} overlaps $QUARRY_HOME {home}; publish outside the raw pool")
     result = ExportResult(dest=str(dest_root), mode=mode)
+    claimed: dict[Path, str] = {}  # sidecar -> the filename that owns it this run
 
     photos = store.iter_photographs(status="complete", licences=licences, subject=subject, category=category)
     for ph in photos:
@@ -151,13 +186,22 @@ def export_tree(
             logger.warning("export_source_missing", subject=ph.subject, filename=ph.filename)
             result.missing += 1
             continue
+        if _stem_taken(dst, claimed):
+            logger.warning("export_stem_collision", subject=ph.subject, filename=ph.filename)
+            result.skipped += 1
+            continue
+        sidecar = provenance_path(dst)
+        had_sidecar = sidecar.exists()
         try:
             _write_provenance(ph, dst)
             _publish_one(src, dst, mode)
             result.published += 1
             result.subjects.add(f"{ph.category}/{ph.subject}")
         except Exception as exc:
-            provenance_path(dst).unlink(missing_ok=True)  # no sidecar for a file that didn't publish
+            # Only remove a sidecar this run created for a file that never published: on a re-export the
+            # earlier file is still in place (_publish_one swaps atomically) and keeps its provenance.
+            if not had_sidecar and not (dst.exists() or dst.is_symlink()):
+                sidecar.unlink(missing_ok=True)
             logger.warning("export_failed", filename=ph.filename, error=str(exc))
             result.skipped += 1
 

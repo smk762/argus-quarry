@@ -11,6 +11,19 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 ### Changed
 
 - The archive index schema is now 5 (the `clip_*` columns). Older indexes report `stale` until `archives index` rebuilds them.
+- `NetClient.get_json` no longer retries a permanent error: `403`/`404`/`410` raise `RemoteGone` and any other non-transient status raises `httpx.HTTPStatusError` on the first response, instead of `RuntimeError` after every retry and backoff.
+- The archive thumb fetch no longer reads the `HTTP(S)_PROXY` environment: it now always connects to the address it has checked.
+
+### Fixed
+
+- `export`: a re-export that fails part-way no longer deletes the provenance sidecar of a file an earlier run published. The file is staged under a temporary name and swapped in atomically, so the earlier file and its sidecar are left as they were. A second file with the same stem in one subject (`a.jpg` next to `a.tif`) is skipped instead of overwriting the first file's `<stem>.json` licence record.
+- Downloads and range reads now ask for `Accept-Encoding: identity`. If a server compresses a byte range anyway, the response is refused. An encoded full download is never resumed. Before this, decompressed byte counts were used as `Range` offsets, so the result could be spliced or miscounted.
+- The archive thumb fetch checks the address again when it connects, and connects to that same IP. A DNS-rebinding host can no longer pass the public-address check and then resolve to `127.0.0.1` or `169.254.169.254`.
+- Legacy-pool migration: the `UNIQUE(name, category)` rebuild of `subjects` now runs in a single transaction. A failure part-way can no longer leave the pool with no `subjects` table and every photograph's subject orphaned. A pool that an older version left half-swapped is repaired on the next open.
+- `fetch_public_domain_metadata.py` keeps `SOURCE.json`'s permissions when it rewrites the file atomically. Before this, every rewrite left the file owner-only (`0600`). The directory is now fsynced after the rename.
+- Semantic index training samples no longer use overlapping blocks. An explicit `train_rows` larger than the matrix is clamped to it. Before this, it re-read the whole matrix once per block.
+- A semantic pointer whose `dir` contains a NUL byte now reads as "not indexed" instead of raising `ValueError`.
+- The licence-gate guard test now also catches module-qualified calls, such as `models.is_accepted_licence(...)`.
 
 ## [0.5.0] - 2026-11-19
 

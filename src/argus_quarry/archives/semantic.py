@@ -146,6 +146,23 @@ def _read_rows(sources: list[_Source], starts: list[int], lo: int, hi: int):
     return x
 
 
+def _train_spans(total: int, want: int) -> list[tuple[int, int]]:
+    """``[lo, hi)`` row spans for a ~``want``-row training sample, evenly spaced over ``total`` rows.
+
+    Contiguous blocks (of at most :data:`TRAIN_BLOCK` rows) keep the reads sequential; each is
+    sized ``ceil(want / blocks)`` and capped at the next block's start, so no row is read twice
+    and the tail of the archive is sampled as much as its head.
+    """
+    want = max(0, min(total, want))
+    if want == 0:
+        return []
+    blocks = math.ceil(want / TRAIN_BLOCK)
+    size = math.ceil(want / blocks)
+    step = total / blocks
+    los = [int(i * step) for i in range(blocks)]
+    return [(lo, min(lo + size, los[i + 1] if i + 1 < blocks else total)) for i, lo in enumerate(los)]
+
+
 def build_vector_index(
     files: Sequence[Path],
     out_root: Path,
@@ -188,15 +205,8 @@ def build_vector_index(
         index = faiss.index_factory(dim, factory, faiss.METRIC_INNER_PRODUCT)
         if not index.is_trained:
             ivf = faiss.try_extract_index_ivf(index)
-            want = train_rows or min(total, max(40 * (ivf.nlist if ivf else 256), 10_000))
-            blocks = max(1, math.ceil(want / TRAIN_BLOCK))
-            step = total / blocks
-            sample = np.concatenate(
-                [
-                    _read_rows(mats, starts, int(i * step), min(total, int(i * step) + TRAIN_BLOCK))
-                    for i in range(blocks)
-                ]
-            )[:want]
+            want = min(total, train_rows or max(40 * (ivf.nlist if ivf else 256), 10_000))
+            sample = np.concatenate([_read_rows(mats, starts, lo, hi) for lo, hi in _train_spans(total, want)])
             logger.info("semantic_train", archive=name, rows=len(sample), factory=factory)
             index.train(sample)
             del sample
@@ -265,13 +275,13 @@ def read_pointer(root: Path, name: str) -> dict[str, Any] | None:
         return None
     d = meta.get("dir")
     # One build directory directly under root: never an absolute path, a separator or "..".
-    if not isinstance(d, str) or not d or d in (".", "..") or Path(d).name != d or "\\" in d:
+    if not isinstance(d, str) or not d or d in (".", "..") or Path(d).name != d or "\\" in d or "\0" in d:
         return None
     candidate = root / d
     try:
         if not candidate.resolve().is_relative_to(root.resolve()) or not candidate.is_dir():
             return None
-    except OSError:
+    except (OSError, ValueError):  # ValueError: a path the OS can't represent (e.g. an embedded NUL)
         return None
     return meta
 

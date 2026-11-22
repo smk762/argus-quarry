@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from conftest import FakeNet
 
 from argus_quarry.downloaders.commons import API_URL, CommonsDownloader
@@ -166,21 +167,46 @@ def test_commons_reports_a_non_free_licence_instead_of_filtering_it(config):
     assert [r.licence for r in records] == ["CC BY-NC 4.0"]
 
 
-def test_only_ingest_applies_licence_policy():
-    """No downloader or archive imports the licence gate's functions: they report, ingest decides."""
+#: The ingest licence gate: only ingest may call (or import) these.
+LICENCE_GATE = frozenset({"is_accepted_licence", "normalise_licence"})
+
+
+def _licence_gate_names(source: str) -> set[str]:
+    """Gate functions ``source`` reaches: imported by name, called bare, or via a module (``models.normalise_licence``)."""
     import ast
+
+    tree = ast.parse(source)
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names |= {a.name for a in node.names}
+        elif isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):  # licence.is_accepted_licence(...), lic.normalise_licence(...)
+            names.add(node.attr)
+    return names & LICENCE_GATE
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from argus_quarry.models import is_accepted_licence",
+        "from argus_quarry.models import normalise_licence as norm",
+        "from argus_quarry import models\nmodels.is_accepted_licence(x)",
+        "import argus_quarry.models as lic\nlic.normalise_licence(x)",
+        "import argus_quarry.models\nargus_quarry.models.is_accepted_licence(x)",
+    ],
+)
+def test_the_licence_gate_guard_sees_every_way_to_reach_the_gate(source):
+    assert _licence_gate_names(source), source
+
+
+def test_only_ingest_applies_licence_policy():
+    """No downloader or archive reaches the licence gate's functions: they report, ingest decides."""
     from pathlib import Path
 
     import argus_quarry
 
     pkg = Path(argus_quarry.__file__).parent
-    gate = {"is_accepted_licence", "normalise_licence"}
     for path in [*(pkg / "downloaders").rglob("*.py"), *(pkg / "archives").rglob("*.py")]:
-        names = {
-            a.name
-            for node in ast.walk(ast.parse(path.read_text()))
-            if isinstance(node, ast.ImportFrom)
-            for a in node.names
-        }
-        names |= {n.id for n in ast.walk(ast.parse(path.read_text())) if isinstance(n, ast.Name)}
-        assert not names & gate, f"{path.relative_to(pkg)} applies licence policy"
+        assert not _licence_gate_names(path.read_text()), f"{path.relative_to(pkg)} applies licence policy"

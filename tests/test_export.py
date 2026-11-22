@@ -133,3 +133,67 @@ def test_a_second_symlink_export_republishes_every_file(config, tmp_path):
         export_tree(config, store, dest, mode="symlink")
         again = export_tree(config, store, dest, mode="symlink")
     assert again.published == 3 and again.skipped == 0
+
+
+def test_a_failed_re_export_keeps_the_earlier_file_and_its_sidecar(config, tmp_path, monkeypatch):
+    """A re-export that fails mid-publish must not strip provenance from the file an earlier run published."""
+    import json
+
+    import argus_quarry.export as export_mod
+
+    _land_two(config)
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        export_tree(config, store, dest, mode="copy", category="wardrobe")
+        (img,) = [p for p in (dest / "wardrobe" / "Red_dress").iterdir() if p.suffix != ".json"]
+        before = img.read_bytes()
+
+        def broken_copy(*_a, **_k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(export_mod.shutil, "copy2", broken_copy)
+        again = export_tree(config, store, dest, mode="copy", category="wardrobe")
+    assert again.published == 0 and again.skipped == 1
+    assert img.read_bytes() == before  # the earlier publication is still in place...
+    assert json.loads(img.with_suffix(".json").read_text())["licence"] == "CC0"  # ...with its provenance
+    assert not [p for p in img.parent.iterdir() if p.name.startswith(".")]  # no staged leftovers
+
+
+def test_a_fresh_export_that_fails_leaves_no_orphan_sidecar(config, tmp_path, monkeypatch):
+    import argus_quarry.export as export_mod
+
+    _land_two(config)
+    dest = tmp_path / "published"
+
+    def broken_copy(*_a, **_k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(export_mod.shutil, "copy2", broken_copy)
+    with ProvenanceStore(config.db_path) as store:
+        result = export_tree(config, store, dest, mode="copy", category="wardrobe")
+    assert result.published == 0 and result.skipped == 1
+    assert not list((dest / "wardrobe" / "Red_dress").iterdir())
+
+
+def test_same_stem_files_in_one_subject_never_share_a_sidecar(config, tmp_path):
+    """a.jpg and a.png would both own a.json: the second is skipped, never overwrites the first's licence."""
+    import json
+
+    _land_two(config)
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        first, second = store.iter_photographs(category="identity")
+        subject_dir = config.images_dir / "identity" / second.subject
+        clash = f"{first.filename.rsplit('.', 1)[0]}.png"
+        (subject_dir / second.filename).rename(subject_dir / clash)
+        store._conn.execute("UPDATE photographs SET filename = ? WHERE id = ?", (clash, second.id))
+        store._conn.commit()
+        result = export_tree(config, store, dest, mode="copy", category="identity")
+        # a later export that only matches the clashing row must not overwrite the earlier sidecar either
+        later = export_tree(config, store, dest, mode="copy", category="identity", licences=[second.licence])
+    assert result.published == 1 and result.skipped == 1
+    assert later.published == 0 and later.skipped == 1
+    published = dest / "identity" / first.subject
+    assert not (published / clash).exists()
+    meta = json.loads((published / first.filename).with_suffix(".json").read_text())
+    assert meta["sha256"] == first.sha256

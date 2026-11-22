@@ -40,6 +40,7 @@ import argparse
 import fcntl
 import json
 import os
+import stat
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -177,6 +178,31 @@ def check_root(root: Path, create: bool, allow_root_fs: bool = False) -> None:
         sys.exit(f"error: {probe} is not writable by this user")
 
 
+def _current_umask() -> int:
+    """The process umask, read without the racy set-and-restore of ``os.umask`` where Linux allows."""
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("Umask:"):
+                return int(line.split()[1], 8)
+    except (OSError, ValueError):
+        pass
+    mask = os.umask(0o022)
+    os.umask(mask)
+    return mask
+
+
+def _manifest_mode(path: Path) -> int:
+    """The mode SOURCE.json should keep: its current one, or what a plain ``open()`` would give a new file.
+
+    ``mkstemp`` creates 0600; installing that inode as-is would make the manifest owner-only
+    for every other account (API service, curator, mirror sync) that reads it.
+    """
+    try:
+        return stat.S_IMODE(path.stat().st_mode)
+    except FileNotFoundError:
+        return 0o666 & ~_current_umask()
+
+
 def write_manifest(root: Path, source: str, records: list[dict]) -> None:
     """Merge ``records`` into ``<root>/<source>/SOURCE.json``, atomically and under a lock.
 
@@ -197,8 +223,14 @@ def write_manifest(root: Path, source: str, records: list[dict]) -> None:
             with os.fdopen(fd, "w") as fh:
                 fh.write(json.dumps(existing, indent=2) + "\n")
                 fh.flush()
+                os.fchmod(fh.fileno(), _manifest_mode(path))
                 os.fsync(fh.fileno())
             os.replace(tmp, path)
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)  # make the rename itself durable
+            finally:
+                os.close(dir_fd)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise

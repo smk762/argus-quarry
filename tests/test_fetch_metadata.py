@@ -79,3 +79,20 @@ def test_no_part_ever_fetches_a_photo(path):
         for part in parts.values():
             assert not kept(part, path) and not kept(part, path.lower()), (part.name, path)
             assert kept(part, "data/part-00001.parquet") or part.allow == ("embeddings/*",)
+
+
+def test_manifest_keeps_its_permissions_across_rewrites(tmp_path):
+    """mkstemp makes 0600 files: an atomic rewrite must not tighten SOURCE.json to owner-only."""
+    import os
+    import stat
+
+    old = os.umask(0o022)
+    try:
+        fetch_meta.write_manifest(tmp_path, "pd12m", [_rec("metadata")])
+        path = tmp_path / "pd12m" / "SOURCE.json"
+        assert stat.S_IMODE(path.stat().st_mode) == 0o644  # a new manifest gets the umask's mode
+        path.chmod(0o664)  # an operator widened it for a group
+        fetch_meta.write_manifest(tmp_path, "pd12m", [_rec("embeddings")])
+        assert stat.S_IMODE(path.stat().st_mode) == 0o664  # and a rewrite keeps it
+    finally:
+        os.umask(old)

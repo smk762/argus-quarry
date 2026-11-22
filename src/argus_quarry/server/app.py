@@ -451,35 +451,80 @@ class UnsafeURL(ValueError):
     """An archive URL (or a redirect) that points somewhere the server must not fetch from."""
 
 
+def _public_addresses(host: str, port: int) -> list[str]:
+    """Resolve ``host`` and return its addresses, refusing if any is private, loopback, link-local or reserved."""
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError) as exc:
+        raise UnsafeURL(f"cannot resolve {host}") from exc
+    addrs: list[str] = []
+    for info in infos:
+        addr = info[4][0].split("%")[0]
+        ip = ipaddress.ip_address(addr)
+        if not ip.is_global or ip.is_multicast:
+            raise UnsafeURL(f"refusing to fetch from a non-public address ({host})")
+        if addr not in addrs:
+            addrs.append(addr)
+    if not addrs:
+        raise UnsafeURL(f"cannot resolve {host}")
+    return addrs
+
+
 def _check_public_url(url: str) -> None:
     """Refuse non-http(s) URLs and hosts resolving to private, loopback, link-local or reserved IPs.
 
     Archive URLs come from third-party metadata, and the server fetches them from inside
     the deployment: every hop is checked, so a redirect can't reach 169.254.169.254 or localhost.
+    This is the early, cheap refusal; :func:`_public_only_transport` re-checks at connect time.
     """
     import httpx
 
     parsed = httpx.URL(url)
     if parsed.scheme not in ("http", "https") or not parsed.host:
         raise UnsafeURL(f"refusing to fetch a {parsed.scheme or 'relative'} URL")
-    try:
-        infos = socket.getaddrinfo(parsed.host, parsed.port or (443 if parsed.scheme == "https" else 80))
-    except socket.gaierror as exc:
-        raise UnsafeURL(f"cannot resolve {parsed.host}") from exc
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0].split("%")[0])
-        if not ip.is_global or ip.is_multicast:
-            raise UnsafeURL(f"refusing to fetch from a non-public address ({parsed.host})")
+    _public_addresses(parsed.host, parsed.port or (443 if parsed.scheme == "https" else 80))
+
+
+def _public_only_transport():  # noqa: ANN202 - httpx.HTTPTransport, imported lazily
+    """An httpx transport that connects only to addresses it has just vetted itself.
+
+    Checking a URL and then letting httpx resolve it again leaves a DNS-rebinding window: a
+    hostile resolver can answer the check with a public IP and the connect with 127.0.0.1.
+    Here the resolve, the check and the connect use the same answer: the socket is opened to
+    the vetted IP, while TLS still verifies (and sends SNI for) the hostname.
+    """
+    import httpcore
+    import httpx
+
+    class _PublicOnlyBackend(httpcore.SyncBackend):
+        def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):  # noqa: ANN001, ANN202
+            last: Exception | None = None
+            for addr in _public_addresses(host, port):
+                try:
+                    return super().connect_tcp(addr, port, timeout, local_address, socket_options)
+                except httpcore.ConnectError as exc:  # try the next vetted address, like create_connection
+                    last = exc
+            raise last  # type: ignore[misc]  # _public_addresses never returns an empty list
+
+    transport = httpx.HTTPTransport()
+    pool = getattr(transport, "_pool", None)
+    if pool is None or not hasattr(pool, "_network_backend"):  # fail closed if httpx's internals move
+        raise RuntimeError("httpx transport has no pluggable network backend; refusing an unguarded fetch")
+    pool._network_backend = _PublicOnlyBackend()
+    return transport
 
 
 def _fetch_original(config: QuarryConfig, url: str, *, transport=None) -> bytes:  # noqa: ANN001
     """GET an archive original for thumbnailing, refusing pathological sizes mid-stream.
 
-    Redirects are followed by hand so each hop is checked by :func:`_check_public_url`.
+    Redirects are followed by hand so each hop is checked by :func:`_check_public_url`, and the
+    default transport re-vets the address it actually connects to (no DNS-rebinding window).
     """
     import httpx
 
     headers = {"User-Agent": config.user_agent}
+    if transport is None:
+        transport = _public_only_transport()
     with httpx.Client(headers=headers, timeout=30, follow_redirects=False, transport=transport) as client:
         for _hop in range(ARCHIVE_THUMB_MAX_REDIRECTS + 1):
             _check_public_url(url)

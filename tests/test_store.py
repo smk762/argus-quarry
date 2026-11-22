@@ -97,6 +97,35 @@ def _legacy_pool(config, filenames=("legacy.jpg",)):
     con.close()
 
 
+def test_a_failed_subjects_rebuild_leaves_the_legacy_table_intact(config):
+    """The UNIQUE rebuild is all-or-nothing: a failure after its DROP must not strand the rows in subjects_new."""
+    _legacy_pool(config)
+    con = sqlite3.connect(str(config.db_path))
+    # A view over the table makes the rebuild's final RENAME fail, after its DROP has already run.
+    con.execute("CREATE VIEW subject_names AS SELECT name FROM people")
+    con.commit()
+    con.close()
+    with pytest.raises(sqlite3.Error):
+        ProvenanceStore(config.db_path)
+    con = sqlite3.connect(str(config.db_path))
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "subjects" in tables and "subjects_new" not in tables
+    assert con.execute("SELECT name FROM subjects WHERE id = 1").fetchone() == ("Albert_Einstein",)
+    assert con.execute("PRAGMA foreign_key_check").fetchall() == []
+    con.close()
+
+
+def test_a_half_swapped_subjects_table_is_rescued_not_recreated_empty(config):
+    """An older version could crash between DROP subjects and the RENAME: the next open restores the rows."""
+    with ProvenanceStore(config.db_path) as store:
+        sid = store.upsert_subject(Subject(name="Albert_Einstein"))
+    con = sqlite3.connect(str(config.db_path))
+    con.executescript("ALTER TABLE subjects RENAME TO subjects_new;")
+    con.close()
+    with ProvenanceStore(config.db_path) as store:
+        assert store.subject_name(sid) == "Albert_Einstein"
+
+
 def test_an_interrupted_legacy_relocation_finishes_on_the_next_open(config, monkeypatch):
     from pathlib import Path
 

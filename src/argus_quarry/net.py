@@ -23,6 +23,9 @@ from argus_quarry.config import QuarryConfig
 logger = structlog.get_logger()
 
 _TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504}
+#: Byte offsets (``Range``, ``Content-Range``, a ``.part``'s size) count the *encoded* representation, but
+#: httpx decodes gzip/deflate transparently. Every byte-counted request asks for the bytes as stored.
+_IDENTITY = {"Accept-Encoding": "identity"}
 
 
 class TokenBucket:
@@ -89,7 +92,12 @@ class NetClient:
         time.sleep(delay)
 
     def get_json(self, url: str, *, params: dict | None = None, source: str = "default") -> dict:
-        """GET a JSON API response, retrying transient failures."""
+        """GET a JSON API response, retrying transient failures.
+
+        A permanent error raises at once, never retried: :class:`RemoteGone` for ``403``/``404``/``410``,
+        ``httpx.HTTPStatusError`` for any other non-transient status. Retrying those only spends the
+        rate limit the source's other workers share.
+        """
         last_exc: Exception | None = None
         for attempt in range(self.config.max_retries):
             self._bucket(source).take()
@@ -99,9 +107,11 @@ class NetClient:
                     logger.warning("http_transient", url=url, status=resp.status_code, attempt=attempt)
                     self._sleep_backoff(attempt)
                     continue
-                resp.raise_for_status()
+                if resp.status_code in GONE_STATUS:
+                    raise RemoteGone(url, resp.status_code)
+                resp.raise_for_status()  # any other error status is permanent: raised, not retried
                 return resp.json()
-            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+            except httpx.TransportError as exc:
                 last_exc = exc
                 logger.warning("http_error", url=url, error=str(exc), attempt=attempt)
                 self._sleep_backoff(attempt)
@@ -140,7 +150,7 @@ class NetClient:
                 elif have == last - first + 1:  # finished before an interrupted rename: a Range would 416
                     part.replace(dest)
                     return DownloadResult(path=dest, size=have, resumed=True)
-                headers = {"Range": f"bytes={first + have}-{last}"}
+                headers = {"Range": f"bytes={first + have}-{last}", **_IDENTITY}
             else:
                 # Resume only a partial whose identity was recorded: If-Range makes a changed
                 # resource answer 200 (start over) instead of splicing two byte streams together.
@@ -149,6 +159,7 @@ class NetClient:
                     part.unlink(missing_ok=True)
                     have = 0
                 headers = {"Range": f"bytes={have}-", "If-Range": validator} if have else {}
+                headers.update(_IDENTITY)
             try:
                 with self._client.stream("GET", url, headers=headers) as resp:
                     if resp.status_code in _TRANSIENT_STATUS:
@@ -157,6 +168,14 @@ class NetClient:
                         continue
                     if resp.status_code in GONE_STATUS:
                         raise RemoteGone(url, resp.status_code)
+                    encoded = _is_encoded(resp)
+                    if encoded and (span is not None or (have and resp.status_code == 206)):
+                        # A compressed fragment's decoded length is not the span's byte count, and it
+                        # cannot be appended to a .part: refuse rather than splice or mis-count.
+                        _discard_part(part, validator_file)
+                        raise httpx.TransportError(
+                            f"server applied Content-Encoding {resp.headers['content-encoding']!r} to a byte range"
+                        )
                     if span is not None:
                         _check_span(resp, span[0] + have, span[1])
                     elif have and resp.status_code == 416:
@@ -181,7 +200,10 @@ class NetClient:
                             raise
                     resp.raise_for_status()
                     if not have and span is None:
-                        _write_validator(validator_file, resp)
+                        if encoded:  # decoded bytes on disk: their count is no Range offset, so never resume
+                            validator_file.unlink(missing_ok=True)
+                        else:
+                            _write_validator(validator_file, resp)
 
                     mode = "ab" if have else "wb"
                     written = have
@@ -217,7 +239,8 @@ class NetClient:
         for attempt in range(self.config.max_retries):
             self._bucket(source).take()
             try:
-                with self._client.stream("GET", url, headers={"Range": f"bytes={start}-{start + length - 1}"}) as resp:
+                headers = {"Range": f"bytes={start}-{start + length - 1}", **_IDENTITY}
+                with self._client.stream("GET", url, headers=headers) as resp:
                     if resp.status_code in _TRANSIENT_STATUS:
                         logger.warning("range_transient", url=url, status=resp.status_code, attempt=attempt)
                         self._sleep_backoff(attempt)
@@ -228,6 +251,10 @@ class NetClient:
                         raise RemoteGone(url, resp.status_code)
                     _check_span(resp, start, None)
                     resp.raise_for_status()
+                    if _is_encoded(resp):  # decoded bytes are not the file's bytes at these offsets
+                        raise httpx.TransportError(
+                            f"server applied Content-Encoding {resp.headers['content-encoding']!r} to a byte range"
+                        )
                     chunks: list[bytes] = []
                     got = 0
                     for chunk in resp.iter_bytes(chunk_size=65536):
@@ -326,6 +353,11 @@ def _read_validator(path: Path) -> str | None:
         return path.read_text().strip() or None
     except OSError:
         return None
+
+
+def _is_encoded(resp: httpx.Response) -> bool:
+    """True if the body is content-encoded (gzip, ...), so its decoded length is not its byte length."""
+    return resp.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity")
 
 
 def _discard_part(part: Path, validator_file: Path) -> None:
