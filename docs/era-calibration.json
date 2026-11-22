@@ -1,0 +1,550 @@
+{
+  "eras": [
+    "pre1800",
+    "1800s",
+    "1900-1945",
+    "1946-1979",
+    "1980-1999",
+    "2000-now"
+  ],
+  "kinds": [
+    "photo",
+    "artwork",
+    "document"
+  ],
+  "film_archives": [
+    "Swedish Railway Museum",
+    "Deutsche Fotothek",
+    "Netherlands Institute for Military History",
+    "Estonian Sports and Olympic Museum",
+    "The Norwegian Museum of Cultural History",
+    "Bohusl\u00e4n Museum",
+    "The Utrecht Archives",
+    "Regional Archive Nijmegen"
+  ],
+  "bias": {
+    "photo:1800s": 0.0,
+    "photo:1900-1945": 0.0,
+    "photo:1946-1979": 0.0,
+    "photo:1980-1999": 0.0,
+    "photo:2000-now": 0.0,
+    "artwork:pre1800": 2.9201,
+    "artwork:1800s": 0.6805,
+    "artwork:1900-1945": -0.4171,
+    "artwork:1946-1979": 0.138,
+    "artwork:1980-1999": -1.2579,
+    "artwork:2000-now": 0.7054,
+    "document:pre1800": 1.9938,
+    "document:1800s": 1.0768,
+    "document:1900-1945": 1.5161,
+    "document:1946-1979": 0.7713,
+    "document:1980-1999": 0.6068,
+    "document:2000-now": -0.0866
+  },
+  "zero_shot": {
+    "held_out": {
+      "n": 30561,
+      "accuracy": 0.542,
+      "balanced_accuracy": 0.559,
+      "within_one_bucket": 0.75,
+      "per_era": {
+        "pre1800": {
+          "n": 4248,
+          "recall": 0.33,
+          "precision": 0.768
+        },
+        "1800s": {
+          "n": 15857,
+          "recall": 0.577,
+          "precision": 0.75
+        },
+        "1900-1945": {
+          "n": 7050,
+          "recall": 0.538,
+          "precision": 0.627
+        },
+        "1946-1979": {
+          "n": 1224,
+          "recall": 0.419,
+          "precision": 0.415
+        },
+        "1980-1999": {
+          "n": 391,
+          "recall": 0.701,
+          "precision": 0.106
+        },
+        "2000-now": {
+          "n": 1791,
+          "recall": 0.791,
+          "precision": 0.213
+        }
+      },
+      "kind_accuracy": 0.89,
+      "confusion": [
+        [
+          1400,
+          1646,
+          99,
+          50,
+          83,
+          970
+        ],
+        [
+          407,
+          9156,
+          1860,
+          116,
+          1396,
+          2922
+        ],
+        [
+          10,
+          1287,
+          3796,
+          469,
+          448,
+          1040
+        ],
+        [
+          0,
+          31,
+          207,
+          513,
+          210,
+          263
+        ],
+        [
+          1,
+          5,
+          10,
+          48,
+          274,
+          53
+        ],
+        [
+          5,
+          86,
+          80,
+          40,
+          163,
+          1417
+        ]
+      ],
+      "by_threshold": [
+        {
+          "min_conf": 0.0,
+          "kept": 1.0,
+          "accuracy": 0.542
+        },
+        {
+          "min_conf": 0.3,
+          "kept": 0.984,
+          "accuracy": 0.547
+        },
+        {
+          "min_conf": 0.4,
+          "kept": 0.883,
+          "accuracy": 0.576
+        },
+        {
+          "min_conf": 0.5,
+          "kept": 0.722,
+          "accuracy": 0.626
+        },
+        {
+          "min_conf": 0.6,
+          "kept": 0.564,
+          "accuracy": 0.676
+        },
+        {
+          "min_conf": 0.7,
+          "kept": 0.431,
+          "accuracy": 0.722
+        },
+        {
+          "min_conf": 0.8,
+          "kept": 0.302,
+          "accuracy": 0.78
+        }
+      ]
+    },
+    "boundary": {
+      "columns_predicted": [
+        "<=1945",
+        "1946-1979",
+        "1980-1999",
+        "2000-now"
+      ],
+      "rows_true": {
+        "<=1945": [
+          2084,
+          51,
+          12,
+          82
+        ],
+        "1946-1979": [
+          45,
+          68,
+          9,
+          1
+        ],
+        "1980-1999": [
+          2,
+          2,
+          13,
+          0
+        ],
+        "2000-now": [
+          8,
+          1,
+          2,
+          11
+        ]
+      },
+      "photo_digital_query": [
+        {
+          "min_conf": 0.0,
+          "selected": 2077,
+          "pre_digital_among_selected": 1324,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.3,
+          "selected": 2053,
+          "pre_digital_among_selected": 1300,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.4,
+          "selected": 1914,
+          "pre_digital_among_selected": 1161,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.5,
+          "selected": 1619,
+          "pre_digital_among_selected": 869,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.6,
+          "selected": 1374,
+          "pre_digital_among_selected": 635,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.7,
+          "selected": 1150,
+          "pre_digital_among_selected": 434,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.8,
+          "selected": 937,
+          "pre_digital_among_selected": 251,
+          "digital_recall": 0.182
+        }
+      ]
+    },
+    "references": {
+      "inaturalist": {
+        "n": 20000,
+        "photo": 0.997,
+        "photo_and_2000_now": 0.996,
+        "era_share": {
+          "pre1800": 0.0,
+          "1800s": 0.0,
+          "1900-1945": 0.0,
+          "1946-1979": 0.0,
+          "1980-1999": 0.002,
+          "2000-now": 0.998
+        },
+        "photo_and_2000_now_conf0.5": 0.996,
+        "photo_and_2000_now_conf0.7": 0.984
+      },
+      "film_archives_bw": {
+        "n": 20000,
+        "photo": 0.994,
+        "photo_and_2000_now": 0.003,
+        "era_share": {
+          "pre1800": 0.0,
+          "1800s": 0.196,
+          "1900-1945": 0.609,
+          "1946-1979": 0.176,
+          "1980-1999": 0.016,
+          "2000-now": 0.003
+        },
+        "photo_and_2000_now_conf0.5": 0.001,
+        "photo_and_2000_now_conf0.7": 0.0
+      },
+      "film_archives_color": {
+        "n": 1205,
+        "photo": 0.946,
+        "photo_and_2000_now": 0.002,
+        "era_share": {
+          "pre1800": 0.0,
+          "1800s": 0.26,
+          "1900-1945": 0.311,
+          "1946-1979": 0.324,
+          "1980-1999": 0.098,
+          "2000-now": 0.007
+        },
+        "photo_and_2000_now_conf0.5": 0.002,
+        "photo_and_2000_now_conf0.7": 0.001
+      }
+    }
+  },
+  "calibrated": {
+    "held_out": {
+      "n": 30561,
+      "accuracy": 0.613,
+      "balanced_accuracy": 0.616,
+      "within_one_bucket": 0.857,
+      "per_era": {
+        "pre1800": {
+          "n": 4248,
+          "recall": 0.621,
+          "precision": 0.602
+        },
+        "1800s": {
+          "n": 15857,
+          "recall": 0.615,
+          "precision": 0.782
+        },
+        "1900-1945": {
+          "n": 7050,
+          "recall": 0.589,
+          "precision": 0.61
+        },
+        "1946-1979": {
+          "n": 1224,
+          "recall": 0.429,
+          "precision": 0.433
+        },
+        "1980-1999": {
+          "n": 391,
+          "recall": 0.652,
+          "precision": 0.136
+        },
+        "2000-now": {
+          "n": 1791,
+          "recall": 0.788,
+          "precision": 0.369
+        }
+      },
+      "kind_accuracy": 0.902,
+      "confusion": [
+        [
+          2637,
+          1108,
+          72,
+          29,
+          18,
+          384
+        ],
+        [
+          1582,
+          9752,
+          2257,
+          114,
+          1142,
+          1010
+        ],
+        [
+          86,
+          1494,
+          4151,
+          433,
+          198,
+          688
+        ],
+        [
+          32,
+          35,
+          223,
+          525,
+          130,
+          279
+        ],
+        [
+          4,
+          6,
+          14,
+          62,
+          255,
+          50
+        ],
+        [
+          38,
+          78,
+          83,
+          49,
+          131,
+          1412
+        ]
+      ],
+      "by_threshold": [
+        {
+          "min_conf": 0.0,
+          "kept": 1.0,
+          "accuracy": 0.613
+        },
+        {
+          "min_conf": 0.3,
+          "kept": 0.982,
+          "accuracy": 0.619
+        },
+        {
+          "min_conf": 0.4,
+          "kept": 0.896,
+          "accuracy": 0.644
+        },
+        {
+          "min_conf": 0.5,
+          "kept": 0.764,
+          "accuracy": 0.681
+        },
+        {
+          "min_conf": 0.6,
+          "kept": 0.617,
+          "accuracy": 0.72
+        },
+        {
+          "min_conf": 0.7,
+          "kept": 0.482,
+          "accuracy": 0.754
+        },
+        {
+          "min_conf": 0.8,
+          "kept": 0.349,
+          "accuracy": 0.792
+        }
+      ]
+    },
+    "boundary": {
+      "columns_predicted": [
+        "<=1945",
+        "1946-1979",
+        "1980-1999",
+        "2000-now"
+      ],
+      "rows_true": {
+        "<=1945": [
+          2139,
+          45,
+          11,
+          34
+        ],
+        "1946-1979": [
+          48,
+          67,
+          7,
+          1
+        ],
+        "1980-1999": [
+          2,
+          3,
+          12,
+          0
+        ],
+        "2000-now": [
+          8,
+          1,
+          2,
+          11
+        ]
+      },
+      "photo_digital_query": [
+        {
+          "min_conf": 0.0,
+          "selected": 1641,
+          "pre_digital_among_selected": 963,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.3,
+          "selected": 1612,
+          "pre_digital_among_selected": 935,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.4,
+          "selected": 1477,
+          "pre_digital_among_selected": 800,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.5,
+          "selected": 1289,
+          "pre_digital_among_selected": 613,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.6,
+          "selected": 1103,
+          "pre_digital_among_selected": 442,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.7,
+          "selected": 936,
+          "pre_digital_among_selected": 296,
+          "digital_recall": 0.182
+        },
+        {
+          "min_conf": 0.8,
+          "selected": 760,
+          "pre_digital_among_selected": 165,
+          "digital_recall": 0.182
+        }
+      ]
+    },
+    "references": {
+      "inaturalist": {
+        "n": 20000,
+        "photo": 0.993,
+        "photo_and_2000_now": 0.992,
+        "era_share": {
+          "pre1800": 0.0,
+          "1800s": 0.0,
+          "1900-1945": 0.0,
+          "1946-1979": 0.0,
+          "1980-1999": 0.001,
+          "2000-now": 0.998
+        },
+        "photo_and_2000_now_conf0.5": 0.991,
+        "photo_and_2000_now_conf0.7": 0.972
+      },
+      "film_archives_bw": {
+        "n": 20000,
+        "photo": 0.987,
+        "photo_and_2000_now": 0.003,
+        "era_share": {
+          "pre1800": 0.002,
+          "1800s": 0.195,
+          "1900-1945": 0.613,
+          "1946-1979": 0.172,
+          "1980-1999": 0.015,
+          "2000-now": 0.003
+        },
+        "photo_and_2000_now_conf0.5": 0.001,
+        "photo_and_2000_now_conf0.7": 0.0
+      },
+      "film_archives_color": {
+        "n": 1205,
+        "photo": 0.928,
+        "photo_and_2000_now": 0.003,
+        "era_share": {
+          "pre1800": 0.002,
+          "1800s": 0.278,
+          "1900-1945": 0.291,
+          "1946-1979": 0.329,
+          "1980-1999": 0.09,
+          "2000-now": 0.01
+        },
+        "photo_and_2000_now_conf0.5": 0.002,
+        "photo_and_2000_now_conf0.7": 0.001
+      }
+    }
+  }
+}

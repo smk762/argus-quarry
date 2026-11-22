@@ -450,7 +450,7 @@ def era_join_sql(path: Path) -> str:
     eras = "[" + ", ".join(f"'{e}'" for e in ERAS) + "]"
     kinds = "[" + ", ".join(f"'{k}'" for k in KINDS) + "]"
     return (
-        f"SELECT pos, list_extract({eras}, era::INTEGER + 1) AS clip_era, round(era_conf, 3)::REAL AS clip_era_conf, "
-        f"list_extract({kinds}, kind::INTEGER + 1) AS clip_kind, round(kind_conf, 3)::REAL AS clip_kind_conf "
+        f"SELECT pos, list_extract({eras}, era::INTEGER + 1) AS clip_era, round(era_conf::DOUBLE, 3) AS clip_era_conf, "
+        f"list_extract({kinds}, kind::INTEGER + 1) AS clip_kind, round(kind_conf::DOUBLE, 3) AS clip_kind_conf "
         f"FROM read_parquet('{_sql(path)}')"
     )

@@ -4,6 +4,14 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **CLIP era and kind for PD12M** (#19). `argus-quarry archives era pd12m` scores every image's published CLIP ViT-L/14 embedding against committed, sha256-pinned prompt vectors encoded with the matching text tower. It needs no text model at index or query time. The run is chunked and resumable, and `--limit-rows` scores a sample. New filters `clip_eras`, `clip_kinds`, `clip_era_min_conf` and `clip_kind_min_conf` (HTTP `clip_era=`, `clip_kind=`, …; CLI `--clip-era`, `--clip-kind`), new item fields `clip_era`, `clip_era_conf`, `clip_kind` and `clip_kind_conf`, `clip_eras` / `clip_kinds` / `date_sources` in facets, and `era` in status. "Photo, digital era" is `clip_kind=photo&clip_era=2000-now`. Calibration against the caption-dated items and collection references is in `docs/era-calibration.md`, and `scripts/calibrate_era.py` reproduces it.
+
+### Changed
+
+- The archive index schema is now 5 (the `clip_*` columns). Older indexes report `stale` until `archives index` rebuilds them.
+
 ## [0.5.0] - 2026-11-19
 
 ### Added

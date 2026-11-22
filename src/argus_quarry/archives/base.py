@@ -60,8 +60,8 @@ ITEM_FIELDS = (
 )  # fmt: skip
 #: Index columns with no source file behind them (an archive without embeddings, or no era scores yet).
 _NO_ERA = (
-    "CAST(NULL AS VARCHAR) AS clip_era, CAST(NULL AS REAL) AS clip_era_conf, "
-    "CAST(NULL AS VARCHAR) AS clip_kind, CAST(NULL AS REAL) AS clip_kind_conf"
+    "CAST(NULL AS VARCHAR) AS clip_era, CAST(NULL AS DOUBLE) AS clip_era_conf, "
+    "CAST(NULL AS VARCHAR) AS clip_kind, CAST(NULL AS DOUBLE) AS clip_kind_conf"
 )
 
 #: Bumped whenever the ``items`` columns, or how they are derived, change; an older index asks to be
