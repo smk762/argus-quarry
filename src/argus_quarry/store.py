@@ -62,7 +62,10 @@ CREATE TABLE IF NOT EXISTS photographs (
     status         TEXT NOT NULL DEFAULT 'pending',
     downloaded_at  TEXT,
     captured_at    TEXT,
-    captured_at_source TEXT
+    captured_at_source TEXT,
+    camera_make    TEXT,
+    camera_model   TEXT,
+    capture_medium TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_photographs_remote ON photographs(remote_url);
@@ -341,6 +344,9 @@ class ProvenanceStore:
                     "downloaded_at": "TEXT",
                     "captured_at": "TEXT",
                     "captured_at_source": "TEXT",
+                    "camera_make": "TEXT",
+                    "camera_model": "TEXT",
+                    "capture_medium": "TEXT",
                 },
             )
         self._conn.executescript(_SCHEMA)
@@ -450,11 +456,15 @@ class ProvenanceStore:
         fetched_from: str | None = None,
         captured_at: str | None = None,
         captured_at_source: str | None = None,
+        camera_make: str | None = None,
+        camera_model: str | None = None,
+        capture_medium: str | None = None,
     ) -> None:
         """Record a landed file. ``fetched_from`` is the mirror URL that served the bytes, if not ``remote_url``.
 
         ``captured_at`` is the capture date the file itself states, with ``captured_at_source`` naming
-        where it was read (``"exif"``).
+        where it was read (``"exif"``). ``camera_make`` / ``camera_model`` are the device the file's
+        EXIF names, and ``capture_medium`` what that device says (``digital`` / ``scan``, None if unnamed).
 
         ``remote_url`` itself is never rewritten: it stays the full-resolution primary and the resume key.
         """
@@ -462,7 +472,8 @@ class ProvenanceStore:
             """UPDATE photographs
                    SET status = 'complete', filename = ?, sha256 = ?, width = ?, height = ?,
                        file_size = ?, phash = ?, downloaded_at = ?, fetched_from = ?,
-                       captured_at = ?, captured_at_source = ?
+                       captured_at = ?, captured_at_source = ?,
+                       camera_make = ?, camera_model = ?, capture_medium = ?
                    WHERE id = ?""",
             (
                 filename,
@@ -475,6 +486,9 @@ class ProvenanceStore:
                 fetched_from,
                 captured_at,
                 captured_at_source if captured_at else None,
+                camera_make,
+                camera_model,
+                capture_medium,
                 photo_id,
             ),  # fmt: skip
         )
@@ -630,4 +644,7 @@ class ProvenanceStore:
             # A pool served read-only can't be migrated: tolerate one from before these columns.
             captured_at=row["captured_at"] if "captured_at" in keys else None,
             captured_at_source=row["captured_at_source"] if "captured_at_source" in keys else None,
+            camera_make=row["camera_make"] if "camera_make" in keys else None,
+            camera_model=row["camera_model"] if "camera_model" in keys else None,
+            capture_medium=row["capture_medium"] if "capture_medium" in keys else None,
         )

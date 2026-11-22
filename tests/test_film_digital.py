@@ -102,6 +102,14 @@ def test_the_exif_device_decides_film_or_digital(make, model, verdict):
     assert fds.exif_verdict(make, model) == verdict
 
 
+def test_the_script_and_ingest_share_one_scanner_rule():
+    """#64: the device rule lives in the package; the #55 script only renames ``scan`` to ``film``."""
+    from argus_quarry import exif
+
+    assert not hasattr(fds, "SCANNER")
+    assert fds.capture_medium is exif.capture_medium
+
+
 def test_agreement_scores_a_rater_on_the_items_the_reference_covers():
     reference = {"a": "digital", "b": "film", "c": "digital"}
     rater = {"a": "film", "b": "film", "c": "unsure", "d": "digital"}  # d: not in the reference

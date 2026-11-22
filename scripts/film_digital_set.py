@@ -32,13 +32,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import re
 import sys
 from pathlib import Path
 
 import duckdb
 
 from argus_quarry.archives import era as ze
+from argus_quarry.exif import SCAN, capture_medium, exif_device
 
 ERAS = ("1980-1999", "2000-now")
 #: Confidence bands, split at the thresholds docs/era-calibration.md recommends (0.5, 0.7).
@@ -208,15 +208,13 @@ def report(sample: dict, labels: dict[str, str]) -> dict:
     }
 
 
-#: Devices whose EXIF marks a scan of film or a print. Every other camera or phone model is a digital capture.
-SCANNER = re.compile(r"scan|coolscan|perfection|noritsu|ez controller|pentacon", re.IGNORECASE)
-
-
 def exif_verdict(make: str, model: str) -> str | None:
-    """``film`` for a film scanner, ``digital`` for a camera or phone, None when the file names no device."""
-    if not model.strip():
-        return None
-    return "film" if SCANNER.search(f"{make} {model}") else "digital"
+    """``film`` for a film scanner, ``digital`` for a camera or phone, None when the file names no device.
+
+    The device rule is the package's :func:`argus_quarry.exif.capture_medium`, the one ingest records.
+    """
+    medium = capture_medium(make, model)
+    return "film" if medium == SCAN else medium
 
 
 def cmd_exif(args: argparse.Namespace) -> int:
@@ -239,9 +237,7 @@ def cmd_exif(args: argparse.Namespace) -> int:
                 if not dest.exists():
                     net.download(it["url"], dest, source="pd12m-s3", max_bytes=80 * 1024 * 1024)
                 with Image.open(io.BytesIO(dest.read_bytes())) as im:
-                    exif = im.getexif()
-                make = str(exif.get(271) or "").strip("\x00 ")
-                model = str(exif.get(272) or "").strip("\x00 ")
+                    make, model = (v or "" for v in exif_device(im))
             except Exception as exc:  # unreadable: no reference for this item
                 print(f"  {it['id']}: {exc}", file=sys.stderr)
                 make = model = ""

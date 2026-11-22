@@ -336,3 +336,38 @@ def test_no_trustworthy_exif_date_records_no_capture_date(config, exif):
 def test_a_malformed_offset_keeps_the_date_without_it(config):
     row = _land(config, make_exif_jpeg(original="1985:06:01 12:00:00", offset="Z"))
     assert row.captured_at == "1985-06-01T12:00:00"
+
+
+@pytest.mark.parametrize(
+    ("make", "model", "medium"),
+    [
+        ("Canon", "Canon EOS 5D Mark II", "digital"),
+        ("Apple", "iPhone 8", "digital"),
+        ("Nikon", "Nikon SUPER COOLSCAN 9000 ED", "scan"),
+        ("EPSON", "Perfection V800/V850", "scan"),
+        ("NORITSU KOKI", "EZ Controller", "scan"),
+    ],
+)
+def test_the_exif_device_is_recorded_with_its_capture_medium(config, make, model, medium):
+    row = _land(config, make_exif_jpeg(make=make, model=model))
+    assert (row.camera_make, row.camera_model, row.capture_medium) == (make, model, medium)
+
+
+@pytest.mark.parametrize(
+    ("exif", "make"),
+    [
+        ({}, None),  # no EXIF at all: many scans carry none
+        ({"original": "1999:01:01 00:00:00"}, None),  # a date but no device
+        ({"make": "Canon"}, "Canon"),  # a maker alone names no device
+        ({"make": "  ", "model": "\x00\x00 "}, None),  # padding only
+    ],
+)
+def test_a_file_naming_no_device_records_an_unknown_medium_never_digital(config, exif, make):
+    row = _land(config, make_exif_jpeg(**exif))
+    assert (row.camera_make, row.camera_model, row.capture_medium) == (make, None, None)
+
+
+def test_the_capture_device_survives_a_downscale(config):
+    config.max_megapixels = 0.05  # the re-encode drops EXIF, so it must be read before
+    row = _land(config, make_exif_jpeg(make="HP", model="HP Scanjet G4050"))
+    assert row.camera_model == "HP Scanjet G4050" and row.capture_medium == "scan"

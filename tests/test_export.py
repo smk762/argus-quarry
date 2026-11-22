@@ -211,3 +211,18 @@ def test_the_sidecar_carries_the_capture_date_and_its_source(config, tmp_path):
     (sidecar,) = dest.rglob("*.json")
     meta = json.loads(sidecar.read_text())
     assert meta["captured_at"] == "1975-03-09T10:11:12" and meta["captured_at_source"] == "exif"
+
+
+def test_the_sidecar_carries_the_capture_device(config, tmp_path):
+    import json
+
+    url = "https://img/scanned.jpg"
+    net = FakeNet(assets={url: make_exif_jpeg(make="Nikon", model="Nikon SUPER COOLSCAN 5000 ED")})
+    dest = tmp_path / "published"
+    with ProvenanceStore(config.db_path) as store:
+        IngestEngine(config, store, net).ingest_record(make_record(url, licence="CC0"))
+        export_tree(config, store, dest, mode="copy")
+    (sidecar,) = dest.rglob("*.json")
+    meta = json.loads(sidecar.read_text())
+    assert meta["camera_make"] == "Nikon" and meta["camera_model"] == "Nikon SUPER COOLSCAN 5000 ED"
+    assert meta["capture_medium"] == "scan"

@@ -252,6 +252,13 @@ class Photograph(BaseModel):
     captured_at: str | None = None
     #: Where ``captured_at`` came from: ``"exif"`` (EXIF ``DateTimeOriginal``), or ``None`` with no date.
     captured_at_source: str | None = None
+    #: The device the file's EXIF names (``Make`` / ``Model``), each ``None`` when the file names none.
+    camera_make: str | None = None
+    camera_model: str | None = None
+    #: What that device says about the capture: ``"scan"`` (a film or flatbed scanner), ``"digital"`` (a
+    #: camera or phone), or ``None`` when no device is named, which means unknown, never digital. A
+    #: digital camera photographing a print reads as ``"digital"``: this names the device, not the subject.
+    capture_medium: str | None = None
 
 
 # ── Backward-compatible aliases (the pre-0.2 portrait-only API) ─────────

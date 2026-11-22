@@ -114,6 +114,9 @@ _PHOTO_FIELDS = (
     "downloaded_at",
     "captured_at",
     "captured_at_source",
+    "camera_make",
+    "camera_model",
+    "capture_medium",
 )
 
 

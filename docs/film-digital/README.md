@@ -61,7 +61,7 @@ Scored against EXIF, the person's decided labels agreed on 45 of 145 (99 digital
 
 - `clip_kind=photo&clip_era=2000-now&clip_era_min_conf=0.7` holds up on the Wikimedia-heavy, non-iNaturalist colour photos where film scans would hide: 55 of 55 are digital, and at least 92% even if every photo without EXIF were film. No boundary-specific prompts are needed.
 - Read "1980-1999" as "looks older" rather than "shot on film": most of it is digital.
-- Where the source keeps EXIF, its camera model is better evidence than either CLIP or eyes. #54 records `captured_at` from landed files; the camera model is a natural next field.
+- Where the source keeps EXIF, its camera model is better evidence than either CLIP or eyes. #54 records `captured_at` from landed files, and #64 records the device (`camera_make` / `camera_model`) with the `capture_medium` it implies, using the same scanner rule as this script (`argus_quarry.exif`).
 
 ```bash
 uv run --no-sync python scripts/film_digital_set.py exif --sample docs/film-digital/sample.json \
