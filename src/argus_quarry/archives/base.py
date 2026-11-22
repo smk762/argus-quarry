@@ -519,6 +519,8 @@ class Archive(ABC):
     def era_vector_files(self) -> list[Path]:
         """Where era scoring reads embeddings: the semantic build's local float16 copy when there is one
         (one sequential read off local disk), else the archived matrices (``items.pos`` order either way)."""
+        if not self.embedding_model:
+            raise ArchiveUnavailable(f"{self.name}: this archive publishes no embeddings, so no CLIP era")
         meta = sem.read_pointer(self.config.archive_index_dir, self.name)
         if meta:
             local = self.config.archive_index_dir / meta["dir"] / "vectors.f16.npy"
