@@ -300,3 +300,24 @@ def test_migration_adds_fetched_from_to_an_existing_pool(config):
         assert [p.fetched_from for p in reader.iter_photographs(status=None)] == [None]
     with ProvenanceStore(config.db_path) as store:
         assert store._column_exists("photographs", "fetched_from")
+
+
+def test_migration_adds_the_capture_date_columns_to_an_existing_pool(config):
+    """Pools from before EXIF capture dates gain the nullable columns in place; old rows read as undated."""
+    with ProvenanceStore(config.db_path) as store:
+        sid = store.upsert_subject(Subject(name="Albert_Einstein"))
+        rid = store.insert_pending(
+            Photograph(subject_id=sid, subject="Albert_Einstein", source="commons", source_url="https://x",
+                       licence="PD", remote_url="https://img/old.jpg")
+        )  # fmt: skip
+        store.mark_complete(rid, filename="a.jpg", sha256="aa", width=1, height=1, file_size=1)
+        store._conn.execute("ALTER TABLE photographs DROP COLUMN captured_at")
+        store._conn.execute("ALTER TABLE photographs DROP COLUMN captured_at_source")
+        store._conn.commit()
+    with ProvenanceStore.open_readable(config.db_path) as ro:  # read-only: no migration, still serveable
+        assert ro.get_by_remote_url("https://img/old.jpg").captured_at is None
+    with ProvenanceStore(config.db_path) as store:
+        assert store._column_exists("photographs", "captured_at")
+        assert store._column_exists("photographs", "captured_at_source")
+        row = store.get_by_remote_url("https://img/old.jpg")
+        assert row.captured_at is None and row.captured_at_source is None

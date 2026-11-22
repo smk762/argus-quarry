@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import FakeNet, make_image_bytes, make_record
+from conftest import FakeNet, make_exif_jpeg, make_image_bytes, make_record
 
 from argus_quarry.ingest import BudgetReached, IngestEngine, fetch
 from argus_quarry.store import ProvenanceStore
@@ -294,3 +294,45 @@ def test_an_unsafe_subject_on_a_record_reusing_a_row_is_still_refused(config):
     home = config.images_dir.parent
     outside = [p for p in home.parent.rglob("*.jpg") if not p.resolve().is_relative_to(config.images_dir.resolve())]
     assert outside == []
+
+
+def _land(config, data: bytes, url: str = "https://img/exif.jpg"):
+    net = FakeNet(assets={url: data})
+    with ProvenanceStore(config.db_path) as store:
+        outcome = IngestEngine(config, store, net).ingest_record(make_record(url))
+        assert outcome.status == "complete"
+        return store.get_by_remote_url(url)
+
+
+def test_exif_date_time_original_is_recorded_as_the_capture_date(config):
+    row = _land(config, make_exif_jpeg(original="1998:07:14 09:30:05", offset="+02:00"))
+    assert row.captured_at == "1998-07-14T09:30:05+02:00"
+    assert row.captured_at_source == "exif"
+
+
+def test_the_capture_date_survives_a_downscale(config):
+    config.max_megapixels = 0.05  # the re-encode drops EXIF, so it must be read before
+    row = _land(config, make_exif_jpeg(original="2004:01:02 03:04:05"))
+    assert row.captured_at == "2004-01-02T03:04:05" and row.captured_at_source == "exif"
+
+
+@pytest.mark.parametrize(
+    "exif",
+    [
+        {},  # no EXIF date at all
+        {"modified": "2020:01:01 00:00:00"},  # only the file-modified time: not a capture
+        {"original": "0000:00:00 00:00:00"},  # an unset camera clock
+        {"original": "    :  :     :  :  "},
+        {"original": "2001:13:40 25:00:00"},  # not a date
+        {"original": "1700:01:01 00:00:00"},  # before photography
+        {"original": "2999:01:01 00:00:00"},  # the future
+    ],
+)
+def test_no_trustworthy_exif_date_records_no_capture_date(config, exif):
+    row = _land(config, make_exif_jpeg(**exif))
+    assert row.captured_at is None and row.captured_at_source is None
+
+
+def test_a_malformed_offset_keeps_the_date_without_it(config):
+    row = _land(config, make_exif_jpeg(original="1985:06:01 12:00:00", offset="Z"))
+    assert row.captured_at == "1985-06-01T12:00:00"

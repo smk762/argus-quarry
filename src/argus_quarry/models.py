@@ -247,6 +247,11 @@ class Photograph(BaseModel):
     fetched_from: str | None = None
     status: str = "pending"
     downloaded_at: str | None = None
+    #: When the photo was taken, as an ISO 8601 local datetime (with its UTC offset when known), read
+    #: from the landed bytes. ``None`` when the file states no date. On a scan it is the scan's date.
+    captured_at: str | None = None
+    #: Where ``captured_at`` came from: ``"exif"`` (EXIF ``DateTimeOriginal``), or ``None`` with no date.
+    captured_at_source: str | None = None
 
 
 # ── Backward-compatible aliases (the pre-0.2 portrait-only API) ─────────

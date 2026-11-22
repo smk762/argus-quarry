@@ -11,7 +11,9 @@ an O(1) running byte counter seeded once from the DB. Files land under
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
@@ -93,6 +95,44 @@ def _compute_phash(image: Image.Image) -> str | None:
     try:
         return str(imagehash.phash(image))
     except Exception:
+        return None
+
+
+#: EXIF tags: the Exif sub-IFD pointer, ``DateTimeOriginal`` and ``OffsetTimeOriginal``.
+_EXIF_IFD, _DATETIME_ORIGINAL, _OFFSET_TIME_ORIGINAL = 0x8769, 0x9003, 0x9011
+_EXIF_DATETIME = re.compile(r"(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})")
+_EXIF_OFFSET = re.compile(r"[+-]\d{2}:\d{2}")
+#: Before the first surviving photograph (1826/27), an EXIF date is a camera's unset clock, not a capture.
+_EARLIEST_CAPTURE_YEAR = 1826
+
+
+def _exif_text(value: object) -> str:
+    if isinstance(value, bytes):
+        value = value.decode("ascii", "replace")
+    return str(value).strip().strip("\x00").strip()
+
+
+def _exif_capture_date(image: Image.Image) -> str | None:
+    """EXIF ``DateTimeOriginal`` as an ISO 8601 datetime (with ``OffsetTimeOriginal`` when stated), or None.
+
+    Only ``DateTimeOriginal`` counts: IFD0 ``DateTime`` is when the file was last changed. Blank,
+    zeroed (``0000:00:00 …``), impossible or future dates read as None. On a scan the date is
+    the scan's, not the shot's; the column says it came from EXIF and claims nothing more.
+    """
+    try:
+        raw = image.getexif().get_ifd(_EXIF_IFD).get(_DATETIME_ORIGINAL)
+        if raw is None:
+            return None
+        m = _EXIF_DATETIME.fullmatch(_exif_text(raw))
+        if m is None:
+            return None
+        taken = datetime(*(int(g) for g in m.groups()))  # ValueError on month 13, day 0, ...
+        if not _EARLIEST_CAPTURE_YEAR <= taken.year <= datetime.now(UTC).year + 1:
+            return None
+        stamp = taken.isoformat()
+        offset = _exif_text(image.getexif().get_ifd(_EXIF_IFD).get(_OFFSET_TIME_ORIGINAL, ""))
+        return stamp + offset if _EXIF_OFFSET.fullmatch(offset) else stamp
+    except Exception:  # metadata is opportunistic: a malformed EXIF block never fails a landing
         return None
 
 
@@ -183,7 +223,7 @@ class IngestEngine:
 
         # 2. Verify + apply per-file resolution cap (re-encode/downscale as needed).
         try:
-            landed, width, height, phash = self._verify_and_cap(tmp, _ext_for(fetched_from))
+            landed, width, height, phash, captured_at = self._verify_and_cap(tmp, _ext_for(fetched_from))
         except Exception as exc:
             tmp.unlink(missing_ok=True)
             self.store.set_status(photo_id, "failed")
@@ -230,6 +270,8 @@ class IngestEngine:
             file_size=file_size,
             phash=phash,
             fetched_from=fetched_from if fetched_from != record.remote_url else None,
+            captured_at=captured_at,
+            captured_at_source="exif" if captured_at else None,
         )
         self._pool_bytes += file_size
         logger.info("landed", url=fetched_from, filename=filename, size=file_size)
@@ -283,8 +325,11 @@ class IngestEngine:
         pid = self._insert_pending(record, subject_id, record.licence)
         self.store.set_status(pid, "quarantined")
 
-    def _verify_and_cap(self, src: Path, ext: str) -> tuple[Path, int, int, str | None]:
-        """Decode, enforce the megapixel cap, and return (landed_path, w, h, phash).
+    def _verify_and_cap(self, src: Path, ext: str) -> tuple[Path, int, int, str | None, str | None]:
+        """Decode, enforce the megapixel cap, and return (landed_path, w, h, phash, captured_at).
+
+        ``captured_at`` is read from the downloaded bytes before a downscale or re-encode can drop
+        their EXIF.
 
         The landed suffix follows the decoded format, not the URL: JPEG/PNG keep their
         bytes, other formats are re-encoded to PNG so a TIFF never lands named ``.jpg``.
@@ -294,6 +339,7 @@ class IngestEngine:
             width, height = im.size
             mp = (width * height) / 1_000_000
             phash = _compute_phash(im)
+            captured_at = _exif_capture_date(im)
 
             if mp > self.config.max_megapixels > 0:
                 scale = (self.config.max_megapixels / mp) ** 0.5
@@ -302,7 +348,7 @@ class IngestEngine:
                 out = src.with_suffix(".capped.jpg")
                 capped.save(out, "JPEG", quality=90, optimize=True)
                 src.unlink(missing_ok=True)
-                return out, new_size[0], new_size[1], phash
+                return out, new_size[0], new_size[1], phash, captured_at
 
             suffix = _LANDED_FORMATS.get(im.format or "")
             if suffix is None:
@@ -311,11 +357,11 @@ class IngestEngine:
                 frame = im if im.mode in {"1", "L", "LA", "I", "I;16", "P", "RGB", "RGBA"} else im.convert("RGB")
                 frame.save(out, "PNG", optimize=True)
                 src.unlink(missing_ok=True)
-                return out, width, height, phash
+                return out, width, height, phash, captured_at
 
         if src.suffix != suffix and not (suffix == ".jpg" and src.suffix == ".jpeg"):
             src = src.replace(src.with_suffix(suffix))
-        return src, width, height, phash
+        return src, width, height, phash, captured_at
 
     def _pool_filename(self, record: SourceRecord, sha256: str, ext: str, *, full_hash: bool = False) -> str:
         year = str(record.year) if record.year else "ny"

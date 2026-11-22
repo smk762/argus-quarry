@@ -45,6 +45,7 @@ LIKENESS_CATEGORIES = frozenset({"identity"})
 _PROVENANCE_FIELDS = (
     "category", "subject", "title", "photographer", "year", "source", "source_url", "licence",
     "attribution", "remote_url", "fetched_from", "sha256", "width", "height", "file_size", "downloaded_at",
+    "captured_at", "captured_at_source",
 )  # fmt: skip
 
 

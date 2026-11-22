@@ -38,6 +38,8 @@ PHOTO_FIELDS = {
     "fetched_from",
     "status",
     "downloaded_at",
+    "captured_at",
+    "captured_at_source",
 }
 
 

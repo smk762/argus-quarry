@@ -25,6 +25,24 @@ def make_image_bytes(size: int = 256, seed: int = 0, fmt: str = "JPEG") -> bytes
     return buf.getvalue()
 
 
+def make_exif_jpeg(
+    *, original: str | None = None, offset: str | None = None, modified: str | None = None, seed: int = 7
+) -> bytes:
+    """A JPEG whose EXIF states the given DateTimeOriginal / OffsetTimeOriginal / IFD0 DateTime."""
+    img = Image.open(io.BytesIO(make_image_bytes(seed=seed)))
+    exif = Image.Exif()
+    if modified is not None:
+        exif[0x0132] = modified  # IFD0 DateTime: when the file was changed, never a capture date
+    sub = exif.get_ifd(0x8769)
+    if original is not None:
+        sub[0x9003] = original
+    if offset is not None:
+        sub[0x9011] = offset
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", exif=exif)
+    return buf.getvalue()
+
+
 class FakeNet:
     """Stand-in for :class:`argus_quarry.net.NetClient` — no real HTTP.
 

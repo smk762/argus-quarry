@@ -176,7 +176,17 @@ A single SQLite database (`portraits.sqlite`, WAL mode) with two tables:
   (the identity-only columns stay `NULL` for wardrobe / setting / concept subjects)
 - **`photographs`** — `category · title · photographer · year · source · source_url ·
   licence · attribution · width · height · file_size · filename ·
-  **sha256 (UNIQUE)** · phash · remote_url · fetched_from · status · downloaded_at`
+  **sha256 (UNIQUE)** · phash · remote_url · fetched_from · status · downloaded_at ·
+  captured_at · captured_at_source`
+
+`captured_at` is the capture date the landed file itself states: EXIF
+`DateTimeOriginal`, as an ISO 8601 datetime with its UTC offset when the file
+gives one, and `captured_at_source` is `exif`. It is read before a downscale or
+re-encode drops the metadata. Both stay `NULL` when the file states no
+trustworthy date (an unset `0000:00:00` clock, a date before 1826 or in the future).
+IFD0 `DateTime` (last modified) is never used. On a scan, EXIF dates the scan,
+not the shot. It exists only for landed files, so it doesn't filter the archives
+(those use the caption `year` and `clip_era`). The export sidecar carries both fields.
 
 `remote_url` is the source's own full-resolution URL, always kept so a file can
 be re-fetched at original size; it is also the resume key. `fetched_from` is set

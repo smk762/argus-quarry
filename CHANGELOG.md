@@ -6,6 +6,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Added
 
+- **EXIF capture date for landed files** (#54). Ingest reads EXIF `DateTimeOriginal` (plus `OffsetTimeOriginal` when present) from the downloaded bytes before any downscale or re-encode. It records the value as `captured_at` (ISO 8601) with `captured_at_source: "exif"` in the provenance DB, the `/photos` API and the export sidecar. Blank, zeroed, pre-1826 or future dates are left `NULL`, and IFD0 `DateTime` (last modified) is never used. On a scan, EXIF dates the scan, not the shot. Existing pools gain the two nullable columns on their next read-write open. A pool served read-only before then reads them as `NULL`.
+
 - **CLIP era and kind for PD12M** (#19). `argus-quarry archives era pd12m` scores every image's published CLIP ViT-L/14 embedding against committed, sha256-pinned prompt vectors encoded with the matching text tower. It needs no text model at index or query time. The run is chunked and resumable, and `--limit-rows` scores a sample. New filters `clip_eras`, `clip_kinds`, `clip_era_min_conf` and `clip_kind_min_conf` (HTTP `clip_era=`, `clip_kind=`, …; CLI `--clip-era`, `--clip-kind`), new item fields `clip_era`, `clip_era_conf`, `clip_kind` and `clip_kind_conf`, `clip_eras` / `clip_kinds` / `date_sources` in facets, and `era` in status. "Photo, digital era" is `clip_kind=photo&clip_era=2000-now`. Calibration against the caption-dated items and collection references is in `docs/era-calibration.md`, and `scripts/calibrate_era.py` reproduces it.
 
 ### Changed
