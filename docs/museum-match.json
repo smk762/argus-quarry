@@ -1,0 +1,25 @@
+{
+  "sampled_objects": 3000,
+  "collection_objects": 503479,
+  "gone": 0,
+  "public_domain_with_images": 1538,
+  "matched_objects": 903,
+  "match_rate_of_public_domain_with_images": 0.5871,
+  "match_rate_ci95": [
+    0.5623,
+    0.6115
+  ],
+  "matched_with_catalogue_date": 0.9989,
+  "estimated_pd12m_met_images_matched": 153393,
+  "pd12m_met_images": 149458,
+  "estimated_pd12m_coverage": 1.0263,
+  "precision_checked": 60,
+  "precision_download_errors": 0,
+  "precision_same_picture": 60,
+  "precision": 1.0,
+  "precision_ci95": [
+    0.9398,
+    1.0
+  ],
+  "mismatches": []
+}

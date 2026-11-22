@@ -511,6 +511,74 @@ def archives_era(
             typer.echo(f"  reindexed {n:,} items -> {archive.index_path} ({time.monotonic() - started:.0f}s)")
 
 
+@archives_app.command("museum")
+def archives_museum(
+    name: str = typer.Argument("pd12m", help="Archive to match museum objects onto (PD12M)"),
+    limit: int | None = Option(None, "--limit", min=1, help="Ask for at most N more objects this run (a sample)"),
+    rate: float = Option(1.0, "--rate", min=0.1, max=80, help="Requests per second to the museum API"),
+    block_wait: float = Option(
+        300, "--block-wait", min=0, help="Seconds to pause when the Met's firewall refuses us, then resume (0 = stop)"
+    ),
+    refresh_ids: bool = Option(False, "--refresh-ids", help="Re-fetch the museum's object id list"),
+    reindex: bool = Option(True, "--reindex/--no-reindex", help="Rebuild the metadata index to pick the dates up"),
+    memory_limit: str = Option(DEFAULT_BUILD_MEMORY, "--memory-limit", help="DuckDB memory ceiling for the reindex"),
+) -> None:
+    """Match PD12M items to the Met's catalogue and record each object's date (the Met first, #52).
+
+    Harvests the Met's open API (no key) one object at a time into a resumable cache under
+    $QUARRY_HOME/cache/archives/, compiles the image -> object table, then reindexes. PD12M names
+    each image uuid5(URL, the museum's image URL), so matches are exact and need no image download.
+    The whole collection is ~500k objects, several days at the default 1 request/s; the Met's
+    firewall also refuses an IP for a while after a few hundred quick requests, and the harvest
+    waits those blocks out (--block-wait). Stop and re-run at any time: it resumes from the cache.
+    """
+    import time
+
+    from argus_quarry.archives import get_archive
+    from argus_quarry.archives import museum as mu
+    from argus_quarry.config import QuarryConfig, SourceRate
+    from argus_quarry.net import NetClient
+
+    config = QuarryConfig.from_env()
+    config.rates.setdefault(mu.MET_RATE_SOURCE, SourceRate(rate_per_sec=rate, burst=max(1, int(rate))))
+    with _archive_errors():
+        archive = get_archive(name, config)
+        if mu.MET not in archive.museums:
+            typer.echo(f"error: no museum maps onto {name}", err=True)
+            raise typer.Exit(2)
+        index_dir = config.archive_index_dir
+        started = time.monotonic()
+        with NetClient(config) as net:
+            client = mu.MetClient(net)
+            ids = mu.object_ids(client, index_dir, name, refresh=refresh_ids)
+            typer.echo(f"Harvesting the Met: {len(ids):,} objects in the collection …")
+
+            def progress(done: int, total: int, *, _last: list[float] = [0.0]) -> None:  # noqa: B006
+                now = time.monotonic()
+                if now - _last[0] >= 30 or done == total:
+                    _last[0] = now
+                    typer.echo(f"  {done:,}/{total:,} objects ({now - started:.0f}s)")
+
+            def on_block(n: int, wait: float) -> None:
+                typer.echo(f"  the Met refused requests (block {n}); pausing {wait:.0f}s, then resuming …")
+
+            counts = mu.harvest_patiently(
+                client, index_dir, name, ids, limit=limit, block_wait=block_wait, progress=progress, on_block=on_block
+            )
+        typer.echo(
+            f"  asked {counts['asked']:,} ({counts['gone']:,} gone, {counts['failed']:,} failed; "
+            f"{counts['cached']:,} already cached)"
+        )
+        if counts["blocked"]:
+            typer.echo("  stopped: the Met kept refusing requests. Re-run later; cached answers are kept.", err=True)
+        table = mu.compile_table(index_dir, name)
+        typer.echo(f"  {table['images']:,} public-domain images from {table['objects']:,} objects")
+        if reindex:
+            started = time.monotonic()
+            n = archive.build_index(memory_limit=memory_limit)
+            typer.echo(f"  reindexed {n:,} items -> {archive.index_path} ({time.monotonic() - started:.0f}s)")
+
+
 @archives_app.command("era-prompts", hidden=True)
 def archives_era_prompts(
     model_dir: Path = typer.Argument(..., help="Local snapshot of openai/clip-vit-large-patch14"),
@@ -550,6 +618,8 @@ def archives_search(
         None, "--upload-year-min", help="Year UPLOADED >= (Megalith, from the Flickr id; not when it was taken)"
     ),
     upload_year_max: int | None = Option(None, "--upload-year-max", help="Year uploaded <="),
+    museum_year_min: int | None = Option(None, "--museum-year-min", help="Museum catalogue date begins >= (PD12M)"),
+    museum_year_max: int | None = Option(None, "--museum-year-max", help="Museum catalogue date ends <="),
     limit: int = Option(20, "--limit", help="Rows to print"),
 ) -> None:
     """Print a page of matches — a quick terminal check before saving a slice."""
@@ -569,6 +639,8 @@ def archives_search(
             clip_era_min_conf=clip_era_min_conf,
             upload_year_min=upload_year_min,
             upload_year_max=upload_year_max,
+            museum_year_min=museum_year_min,
+            museum_year_max=museum_year_max,
         )
         page = get_archive(name, QuarryConfig.from_env()).search(query, limit=limit)
     for item in page["items"]:

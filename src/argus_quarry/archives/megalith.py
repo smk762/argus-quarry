@@ -22,6 +22,7 @@ from typing import Any
 
 import structlog
 
+from argus_quarry.archives import museum as mu
 from argus_quarry.archives import upload_year as uy
 from argus_quarry.archives.base import Archive, ArchiveUnavailable, SliceSpec, sql_path
 from argus_quarry.archives.mirror import RATE_SOURCE, MegalithMirror
@@ -94,7 +95,8 @@ class MegalithArchive(Archive):
                 'image/jpeg' AS mime,
                 CAST(NULL AS BIGINT) AS pos,
                 {uy.upload_year_sql("TRY_CAST(regexp_extract(l.url_source, '/photos/[^/]+/([0-9]+)', 1) AS BIGINT)")}
-                    AS upload_year
+                    AS upload_year,
+                {mu.NO_MUSEUM_SQL}
             FROM read_parquet({links}) l
             LEFT JOIN caps c ON c.url_source = l.url_source
             LEFT JOIN sizes d ON d.url_highres = l.url_highres

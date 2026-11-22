@@ -372,6 +372,19 @@ argus-quarry archives search megalith --upload-year-min 2019 --q "street"
 - **Accuracy.** Measured against the posted dates of 351 held-out Megalith photos: 87.8% exact year, 94.3% within one year, median error 14 days. It is coarser before 2011 (61% exact). See [docs/flickr-upload-calibration.md](docs/flickr-upload-calibration.md).
 - **The table** is rebuilt by `scripts/calibrate_flickr_upload.py`. It reads upload dates from public Flickr photo pages, keyless, or from `flickr.photos.getInfo` when `QUARRY_FLICKR_API_KEY` is set (Flickr issues keys only to Pro accounts). Rebuild the Megalith index afterwards.
 
+### Museum catalogue dates (PD12M, the Met)
+
+PD12M names each image copy `uuid5(URL, <the museum's image URL>)`, so a museum object whose image URL hashes to a PD12M filename is exactly the object that image came from. `archives museum` harvests the Met's open API (no key) and records each matched item's **catalogue date** and object:
+
+```bash
+argus-quarry archives museum pd12m --limit 3000    # a sample; re-run to continue (resumable)
+argus-quarry archives search pd12m --museum-year-min 1850 --museum-year-max 1899 --q portrait
+```
+
+- **Columns.** `museum` (`met`), `museum_object_id`, `museum_object_url`, `museum_date` (the catalogue's text) and `museum_year_begin` / `museum_year_end` (BCE is negative). The filters `museum_year_min` / `museum_year_max` match an object only when its whole catalogue range lies inside them. Facets name the source as `museum-catalogue`.
+- **Measured** on 3,000 random Met objects: 58.7% of the Met's public-domain objects with images are in PD12M. From the PD12M side, essentially all 149,458 Met items are matchable, 99.9% of matches have a catalogue date, and 60 of 60 matches compared as the same picture. See [docs/museum-dates.md](docs/museum-dates.md).
+- **It is slow on purpose.** The Met's firewall refuses an IP for a while after a few hundred quick requests, so the harvest runs at 1 request/second and waits out blocks (`--block-wait`). The full collection is about 503k requests, nearly 6 days. Until it has run, the columns stay empty for unharvested items.
+
 Caption terms (`q`, `exclude`, `--q`, `--exclude`) are case-insensitive substrings. Every term in `q` must appear and none in `exclude` may; `"quoted phrases"` stay whole, and a leading `-` in `q` excludes a term (`harbor boats -painting`). An uncaptioned item doesn't mention anything, so an exclusion keeps it.
 
 A slice is a query plus where it lands:
@@ -426,8 +439,8 @@ The server exposes the same thing over HTTP. Every route is `GET` except the fet
 | Route | Returns |
 |---|---|
 | `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`, and `semantic`: `{indexed, vectors, model, built_at}` or `null` when the archive has no embeddings, and `era`: `{scored, of, prompts_sha256, current, built_at, source}` or `null`) and `fetch_allowed` |
-| `GET /archives/{name}/facets` | collections, licences and MIME types with counts; `clip_eras` / `clip_kinds` with counts, `clip_scored`, `upload_dated` / `upload_year_range`, and `date_sources` (which fields are caption-derived, CLIP zero-shot or Flickr upload) |
-| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&clip_era=&clip_era_min_conf=&clip_kind=&clip_kind_min_conf=&upload_year_min=&upload_year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
+| `GET /archives/{name}/facets` | collections, licences and MIME types with counts; `clip_eras` / `clip_kinds` with counts, `clip_scored`, `upload_dated` / `upload_year_range`, `museum_matched` / `museum_dated` / `museum_year_range`, and `date_sources` (which fields are caption-derived, CLIP zero-shot, Flickr upload or museum catalogue) |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&clip_era=&clip_era_min_conf=&clip_kind=&clip_kind_min_conf=&upload_year_min=&upload_year_max=&museum_year_min=&museum_year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |

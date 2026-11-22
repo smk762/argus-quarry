@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from argus_quarry.archives import museum as mu
 from argus_quarry.archives.base import Archive, sql_path
 from argus_quarry.models import SourceRecord
 
@@ -23,6 +24,7 @@ class PD12MArchive(Archive):
     source = "pd12m"
     title = "PD12M"
     embedding_model = "openai/clip-vit-large-patch14"  # CLIP ViT-L/14, matched by the text tower
+    museums = (mu.MET,)
     description = (
         "12.4M CC0 / Public Domain Mark images from 640 institutions (Wikimedia Commons, iNaturalist, "
         "Rijksmuseum, the Met, …), recaptioned and safety-filtered by Spawning."
@@ -35,6 +37,15 @@ class PD12MArchive(Archive):
         # metadata files concatenated in sorted-filename order (checked on the real
         # archive: caption/image CLIP cosine 0.27 aligned vs 0.09 one row off). Each
         # file's start row comes from the parquet footers, so this costs no extra scan.
+        # Museum dates (#52) join on the S3 filename, which PD12M derived as uuid5(URL, museum image URL).
+        table = mu.museum_path(self.config.archive_index_dir, self.name)
+        museum_cols, museum_join = mu.NO_MUSEUM_SQL, ""
+        if table.is_file():
+            museum_cols = ", ".join(f"m.{c}" for c in mu.COLUMNS)
+            museum_join = (
+                f" LEFT JOIN ({mu.join_sql(table)}) m"
+                f" ON m.image_uuid = regexp_extract(p.url, '/images/([0-9a-f-]{{36}})[.]', 1)"
+            )
         return f"""
             WITH files AS (
                 SELECT file_name,
@@ -56,9 +67,10 @@ class PD12MArchive(Archive):
                 source AS collection,
                 mime_type AS mime,
                 f.start + p.file_row_number AS pos,
-                CAST(NULL AS INTEGER) AS upload_year
+                CAST(NULL AS INTEGER) AS upload_year,
+                {museum_cols}
             FROM read_parquet({files}, filename = true, file_row_number = true) p
-            JOIN files f ON f.file_name = p.filename
+            JOIN files f ON f.file_name = p.filename{museum_join}
         """
 
     def _embedding_files(self, root: Path) -> list[Path]:

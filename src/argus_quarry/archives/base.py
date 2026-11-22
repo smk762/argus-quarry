@@ -17,6 +17,7 @@ and builds one DuckDB index under ``$QUARRY_HOME/cache/archives/`` with a common
     rnd         a fixed random key, so "shuffle" pages are stable and diverse
     pos         the item's row in the archive's published embeddings, NULL when it has none
     upload_year the year the photo was uploaded (Megalith: from its Flickr id), never when it was taken
+    museum_*    the museum object the image came from and its catalogue date (PD12M, once harvested)
 
 Searching is read-only. A *slice* (:class:`SliceSpec`) is a saved query plus the
 category/subject it lands under; :meth:`Archive.records` turns it into the same
@@ -42,6 +43,7 @@ import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from argus_quarry.archives import era as ze
+from argus_quarry.archives import museum as mu
 from argus_quarry.archives import semantic as sem
 from argus_quarry.archives import upload_year as uy
 from argus_quarry.config import QuarryConfig
@@ -59,6 +61,7 @@ INT_MAX = 2**31 - 1
 ITEM_FIELDS = (
     "id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime",
     "tone", "medium", "year", "clip_era", "clip_era_conf", "clip_kind", "clip_kind_conf", "upload_year",
+    "museum", "museum_object_id", "museum_object_url", "museum_date", "museum_year_begin", "museum_year_end",
 )  # fmt: skip
 #: Index columns with no source file behind them (an archive without embeddings, or no era scores yet).
 _NO_ERA = (
@@ -70,7 +73,8 @@ _NO_ERA = (
 #: rebuilt. 3: "The photo shows …" openers count as medium photo. 4: ``pos`` (embedding row).
 #: 5: ``clip_era`` / ``clip_kind`` (+ confidences) joined from the zero-shot era scores (#19).
 #: 6: ``upload_year`` (Megalith: approximate Flickr upload year from the photo id, #53).
-INDEX_SCHEMA = 6
+#: 7: ``museum_*`` (PD12M: the museum's catalogue date and object for matched items, #52).
+INDEX_SCHEMA = 7
 #: A semantic query ranks at most this many items (the nearest neighbours that pass the filters).
 SEMANTIC_MAX = 5000
 
@@ -183,6 +187,19 @@ class ArchiveQuery(BaseModel):
         "taken; items without one are excluded)",
     )
     upload_year_max: int | None = Field(None, ge=-INT_MAX, le=INT_MAX, description="year the photo was uploaded <=")
+    museum_year_min: int | None = Field(
+        None,
+        ge=-INT_MAX,
+        le=INT_MAX,
+        description="the museum's catalogue date for the object begins in or after this year (negative = BCE; "
+        "matched items only, see `archives museum`)",
+    )
+    museum_year_max: int | None = Field(
+        None,
+        ge=-INT_MAX,
+        le=INT_MAX,
+        description="the museum's catalogue date for the object ends in or before this year",
+    )
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
     sort: Literal["shuffle", "largest"] = Field("shuffle", description="ignored by semantic/similar_to queries")
     semantic: str | None = Field(
@@ -335,6 +352,8 @@ class Archive(ABC):
     #: The model that made the archive's published image embeddings (and so the text
     #: encoder for ``semantic`` queries); None when the archive publishes none.
     embedding_model: str | None = None
+    #: Museums whose catalogue dates can be matched onto this archive's items (``archives museum``).
+    museums: tuple[str, ...] = ()
 
     def __init__(self, config: QuarryConfig) -> None:
         self.config = config
@@ -361,7 +380,10 @@ class Archive(ABC):
             "items": None,
             "semantic": None,
             "era": None,
+            "museum": None,
         }
+        if self.museums:
+            info["museum"] = self.museum_status()
         if self.embedding_model:
             meta = sem.read_pointer(self.config.archive_index_dir, self.name)
             info["semantic"] = {
@@ -504,6 +526,27 @@ class Archive(ABC):
             )
         except sem.SemanticUnavailable as exc:
             raise ArchiveUnavailable(str(exc)) from exc
+
+    # ── museum catalogue dates (#52) ──────────────────────────────────
+    def museum_status(self) -> dict[str, Any] | None:
+        """What the compiled museum table holds; None for an archive no museum maps onto."""
+        if not self.museums:
+            return None
+        table = mu.museum_path(self.config.archive_index_dir, self.name)
+        cache = mu.cache_path(self.config.archive_index_dir, self.name)
+        images = None
+        if table.is_file():
+            try:
+                images = _duckdb().execute(f"SELECT count(*) FROM read_parquet({sql_path(table)})").fetchone()[0]
+            except Exception:  # a half-written or foreign file: report it as not compiled
+                images = None
+        return {
+            "museums": list(self.museums),
+            "compiled": images is not None,
+            "images": images,
+            "harvested_objects": sum(1 for _ in cache.open()) if cache.is_file() else 0,
+            "source": mu.DATE_SOURCE,
+        }
 
     # ── zero-shot era (#19) ───────────────────────────────────────────
     @property
@@ -656,6 +699,13 @@ class Archive(ABC):
         if query.upload_year_max is not None:
             clauses.append("upload_year <= ?")
             params.append(query.upload_year_max)
+        # The object's whole catalogue range must lie inside the filter: "1800-1900" is not "from 1890".
+        if query.museum_year_min is not None:
+            clauses.append("museum_year_begin >= ?")
+            params.append(query.museum_year_min)
+        if query.museum_year_max is not None:
+            clauses.append("museum_year_end <= ?")
+            params.append(query.museum_year_max)
         if query.min_width:
             clauses.append("width >= ?")
             params.append(query.min_width)
@@ -802,6 +852,10 @@ class Archive(ABC):
             up_dated, up_lo, up_hi = con.execute(
                 "SELECT count(upload_year), min(upload_year), max(upload_year) FROM items"
             ).fetchone()
+            mu_matched, mu_dated, mu_lo, mu_hi = con.execute(
+                "SELECT count(museum_object_id), count(museum_year_begin), min(museum_year_begin), "
+                "max(museum_year_end) FROM items"
+            ).fetchone()
             clip_eras = con.execute(
                 "SELECT clip_era, count(*) FROM items WHERE clip_era IS NOT NULL GROUP BY 1"
             ).fetchall()
@@ -826,9 +880,13 @@ class Archive(ABC):
                 "clip_era": "clip-zero-shot",
                 "clip_kind": "clip-zero-shot",
                 "upload_year": uy.DATE_SOURCE,
+                "museum_year": mu.DATE_SOURCE,
             },
             "upload_dated": up_dated,
             "upload_year_range": [up_lo, up_hi] if up_dated else None,
+            "museum_matched": mu_matched,
+            "museum_dated": mu_dated,
+            "museum_year_range": [mu_lo, mu_hi] if mu_dated else None,
             "clip_scored": sum(n for _, n in clip_eras),
             "clip_eras": [{"name": e, "count": dict(clip_eras).get(e, 0)} for e in ze.ERAS if e in dict(clip_eras)],
             "clip_kinds": [{"name": c, "count": n} for c, n in clip_kinds],
