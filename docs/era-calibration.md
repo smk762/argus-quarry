@@ -67,7 +67,8 @@ A 1M-row sample run (the first rows of the archive, scored from the NAS share in
 
 ## What this supports
 
-- **Photo versus digital: use it.** `clip_kind=photo&clip_era=2000-now&clip_era_min_conf=0.7` keeps 97% of known-digital photos and admits about 0.1% of historic-archive photos. Scanned colour film from the 1980s–90s is the residual risk: it has no large ground truth here, so a person still accepts each image (as argus-curator #113 already requires).
+- **Photo versus digital: use it.** `clip_kind=photo&clip_era=2000-now&clip_era_min_conf=0.7` keeps 97% of known-digital photos and admits about 0.1% of historic-archive photos. Scanned colour film was the residual risk; a hand-labelled boundary set checked against each file's EXIF device found 55 of 55 such photos digital at conf ≥ 0.7 ([film-digital/README.md](film-digital/README.md), #55). A person still accepts each image, as argus-curator #113 requires.
+- **`clip_era=1980-1999` is not a film filter.** On the same set, every photo below conf 0.7 whose EXIF names a device is a digital capture, and at conf ≥ 0.7 it is about half film. Read it as "looks older".
 - **Finer periods: a cue only.** At about 62% balanced accuracy (85% within one bucket), use `clip_era` to sort or to narrow a search, not as a date.
 - **Not a capture date.** For a photograph of an artwork, the era is the artwork's, which is what the prompts describe. Unscored items never match a `clip_*` filter.
 

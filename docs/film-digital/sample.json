@@ -1,0 +1,2712 @@
+{
+ "what": "PD12M colour photos at the clip_era 1980-1999 / 2000-now boundary, for hand labels (#55)",
+ "seed": 55,
+ "prompts_sha256": "838913006bde10cf4bd5b46751aa00043908d174148f8f67b254c88646084745",
+ "scored_rows": 3000000,
+ "excluded_collections": [
+  "iNaturalist"
+ ],
+ "quota": {
+  "2000-now": 60,
+  "1980-1999": 40
+ },
+ "population": {
+  "2000-now|0.5-0.7": 104450,
+  "2000-now|lt0.5": 40285,
+  "1980-1999|lt0.5": 14355,
+  "1980-1999|0.5-0.7": 19404,
+  "2000-now|ge0.7": 436777,
+  "1980-1999|ge0.7": 20361
+ },
+ "rejected": {
+  "greyscale": 48,
+  "unreadable": 0
+ },
+ "short": {
+  "2000-now|lt0.5": 2
+ },
+ "items": [
+  {
+   "id": "212d4c020454ead8cf6d8e5c8b65397f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/aef683e8-d1dd-534a-9699-22541e1e28d1.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.545,
+   "band": "0.5-0.7",
+   "saturation": 0.293
+  },
+  {
+   "id": "cddb185c1a1be954e90cafa037e8ec25",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f67f1443-abc6-5498-b2e0-67f5f74bfeb2.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.607,
+   "band": "0.5-0.7",
+   "saturation": 0.259
+  },
+  {
+   "id": "b822c4b16ebf3a2f5c91e66d0cce3bd5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0ab3761d-664b-588a-935d-1fa3341841e8.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.591,
+   "band": "0.5-0.7",
+   "saturation": 0.284
+  },
+  {
+   "id": "3dc091f3dde4cdf4016ca9540732d243",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/db5d3308-8a1e-52b8-85bf-a0bc2aa73192.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.541,
+   "band": "0.5-0.7",
+   "saturation": 0.176
+  },
+  {
+   "id": "2923d2e9aafb2cfaacda5af9a64940d2",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f13e15d6-e0ab-5f48-973b-02bc5345341d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.602,
+   "band": "0.5-0.7",
+   "saturation": 0.235
+  },
+  {
+   "id": "04a3beca7b3500a6b0cc2b13ccfac91c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6269b4dc-cc61-56b7-a063-6876961ce3f4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.646,
+   "band": "0.5-0.7",
+   "saturation": 0.376
+  },
+  {
+   "id": "da32ac329f4ad16bbf81d5eb1b1b8663",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2a497bd4-803c-592e-bef7-76b34cdbfec4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.626,
+   "band": "0.5-0.7",
+   "saturation": 0.305
+  },
+  {
+   "id": "c374561f71f470cfa9580078a2ebe646",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d6bc64ea-ff90-5fb7-a114-0c61101f951c.jpeg",
+   "collection": "The Danish Agency for Culture",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.69,
+   "band": "0.5-0.7",
+   "saturation": 0.248
+  },
+  {
+   "id": "20d76beda08ca075cc4e8e8d56683982",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/155d2f0c-ccfd-5b1e-ab40-388723ae2b8e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.559,
+   "band": "0.5-0.7",
+   "saturation": 0.418
+  },
+  {
+   "id": "7e131b8100cd38a50b7aabea12ba2a61",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0e5227d5-d239-526e-90a4-a77d6e8a2781.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.587,
+   "band": "0.5-0.7",
+   "saturation": 0.244
+  },
+  {
+   "id": "5d856f9d905e2312441e5b5525d2d9eb",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/03beec66-85cf-552e-867a-ff721ad04cab.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.538,
+   "band": "0.5-0.7",
+   "saturation": 0.287
+  },
+  {
+   "id": "99edb96e05104240fb92327832786dd3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/340bcad3-3397-5449-b20a-beaf82951248.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.534,
+   "band": "0.5-0.7",
+   "saturation": 0.289
+  },
+  {
+   "id": "f10a1fe5d1999699877bff6d6db58cec",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e1f797aa-9426-55b4-863d-11c633563261.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.584,
+   "band": "0.5-0.7",
+   "saturation": 0.325
+  },
+  {
+   "id": "7c3906c16251c352d8308909574d0d87",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7167ad68-b100-52be-87d0-635cb27e8082.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.618,
+   "band": "0.5-0.7",
+   "saturation": 0.491
+  },
+  {
+   "id": "fe09f62865424535896cf12f84bea14f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/51eb42f3-b26a-5e36-b996-543dbfb7294d.jpeg",
+   "collection": "Metropolitan Museum of Art",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.528,
+   "band": "0.5-0.7",
+   "saturation": 0.139
+  },
+  {
+   "id": "36272ed7e1c632c237e2228fea0018fa",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/37fa2347-e93c-5b5f-a639-36243ca25bd8.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.512,
+   "band": "0.5-0.7",
+   "saturation": 0.246
+  },
+  {
+   "id": "5728a76f797029989a4c8e91a52654b1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6f8c97ed-ad3d-5792-b3d8-0a38ef77d695.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.533,
+   "band": "0.5-0.7",
+   "saturation": 0.253
+  },
+  {
+   "id": "74132636a3be7e0506906d4f32853627",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8d77f97c-7c9e-5729-9004-27a10f887ab2.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.536,
+   "band": "0.5-0.7",
+   "saturation": 0.318
+  },
+  {
+   "id": "066c92d56e368634ac1d404b3044fce6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7cbcdf02-6e12-5762-a5fa-8a1dfd859664.jpeg",
+   "collection": "Estonian Sports and Olympic Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.539,
+   "band": "0.5-0.7",
+   "saturation": 0.148
+  },
+  {
+   "id": "479dea8d8fd2d740ec2f9ee7975d3a14",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/bbde8153-8d11-52a0-bab8-a078ed9ab463.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.689,
+   "band": "0.5-0.7",
+   "saturation": 0.243
+  },
+  {
+   "id": "7967f1f3274fa5d856f3c552e4383f2f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f865a2db-6338-575c-b2f0-d2a6601e5c3a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.509,
+   "band": "0.5-0.7",
+   "saturation": 0.48
+  },
+  {
+   "id": "c00fd9dfac7ed754bf956e548339f127",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9e3ff003-78fb-560a-83f5-d008fdcb5a80.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.541,
+   "band": "0.5-0.7",
+   "saturation": 0.172
+  },
+  {
+   "id": "967726ed219460094118492c519cc08b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6b0d2710-7c16-5658-a1d2-4bd827139e70.jpeg",
+   "collection": "Netherlands Institute for Military History",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.689,
+   "band": "0.5-0.7",
+   "saturation": 0.123
+  },
+  {
+   "id": "74f1291baa6cb16ceb9addf27cdd6f2d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e5a7c410-76d6-576d-a1d2-7145e8553ff9.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.62,
+   "band": "0.5-0.7",
+   "saturation": 0.371
+  },
+  {
+   "id": "c16a79ba1be497b572f09fdc658bf537",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/25bc866d-4f7f-51ae-ac3c-b17d94531284.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.6,
+   "band": "0.5-0.7",
+   "saturation": 0.217
+  },
+  {
+   "id": "c2239391feddb5eee2b42af2e4a878ef",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cb069eb7-2e16-5741-b33b-233a0d698323.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.571,
+   "band": "0.5-0.7",
+   "saturation": 0.364
+  },
+  {
+   "id": "5143bc413de22aa0bb2960b298ce7e77",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/dc1a791b-2b6f-5b37-875d-95f1f85cd48d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.606,
+   "band": "0.5-0.7",
+   "saturation": 0.217
+  },
+  {
+   "id": "b1ce32c1daf3e908654a1364a73cc781",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/b9eccedc-50f9-5366-97ff-fdbdbf5944f0.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.579,
+   "band": "0.5-0.7",
+   "saturation": 0.285
+  },
+  {
+   "id": "7e2f55660c2670c889e1f89ff63275f4",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cbda3b13-0f30-57a5-b7bc-be97edff9928.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.676,
+   "band": "0.5-0.7",
+   "saturation": 0.51
+  },
+  {
+   "id": "dbaca01831d2686d92614198495f46c2",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/b9c2f799-528d-5185-a147-93278bbff365.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.674,
+   "band": "0.5-0.7",
+   "saturation": 0.318
+  },
+  {
+   "id": "b727a695f48e5bc645f3e3acc74644d2",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/bf62d001-ed8e-5981-99c0-aee13819f87c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.501,
+   "band": "0.5-0.7",
+   "saturation": 0.221
+  },
+  {
+   "id": "345d68fe85ed93065e685dc09c64f50e",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1218c4c7-7a4b-5999-a633-e45fbde105e0.jpeg",
+   "collection": "Domkirkeodden",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.584,
+   "band": "0.5-0.7",
+   "saturation": 0.17
+  },
+  {
+   "id": "ad2c2207636344d38c271426f8e32073",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0219eba6-9582-506b-bd86-c9d11b9219a1.jpeg",
+   "collection": "NMNH - Mineral Sciences Dept.",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.542,
+   "band": "0.5-0.7",
+   "saturation": 0.165
+  },
+  {
+   "id": "ed3a05f85d5443056749b817826056c4",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/132bebf3-30e8-50cc-b603-4399d69f1e8b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.629,
+   "band": "0.5-0.7",
+   "saturation": 0.268
+  },
+  {
+   "id": "c77c42eede5bffe84c65861b3a9f7982",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/692a429a-42f1-5ece-bb6b-0593d0c81be6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.522,
+   "band": "0.5-0.7",
+   "saturation": 0.32
+  },
+  {
+   "id": "24915f5c3d951b1162ea5c942725695b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9b772d24-1e2c-507e-95d0-27287e9e430c.jpeg",
+   "collection": "Museum of Ethnography",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.618,
+   "band": "0.5-0.7",
+   "saturation": 0.368
+  },
+  {
+   "id": "82e12ce6eb3b342c982f721dc79beadf",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9e46dacf-c11b-5fe1-80ac-a37979b5a3be.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.579,
+   "band": "0.5-0.7",
+   "saturation": 0.16
+  },
+  {
+   "id": "3aef588860db5e3e020e7953e80ef942",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/28ce4e8e-fdae-5f7a-959e-2093a03eabe6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.626,
+   "band": "0.5-0.7",
+   "saturation": 0.152
+  },
+  {
+   "id": "ecf25703e285833b54efae3116b8c4e3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/76df6f0e-1cbe-53be-82d6-1e96ca4ae002.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.625,
+   "band": "0.5-0.7",
+   "saturation": 0.411
+  },
+  {
+   "id": "ff277990a61f0c6bff03da3de21e738a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0f5e4a7c-c945-5021-87a3-d32224f57a3b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.598,
+   "band": "0.5-0.7",
+   "saturation": 0.255
+  },
+  {
+   "id": "13a43a74af2d2f08b8c6cb4d75e63705",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7faaca24-0bab-5162-801e-39b5d7ebd63d.jpeg",
+   "collection": "Netherlands Institute for Military History",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.732,
+   "band": "ge0.7",
+   "saturation": 0.189
+  },
+  {
+   "id": "097b6a04f0292cde18d58373153ecf15",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8c87fcf9-04da-5761-8d1b-c441bc3a6b4e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.721,
+   "band": "ge0.7",
+   "saturation": 0.277
+  },
+  {
+   "id": "93c864fc45eed6098735d6fc4b96201b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/13d27f59-9b44-509d-998e-471ab039d394.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.721,
+   "band": "ge0.7",
+   "saturation": 0.264
+  },
+  {
+   "id": "a2f24ac4b3f802a85bef64397fdcf7f4",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0e87dbae-395d-5366-b5a3-94ea8e27a233.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.829,
+   "band": "ge0.7",
+   "saturation": 0.292
+  },
+  {
+   "id": "82bafb4230fa44ee12ecc1a792d82918",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9a7adbb1-42e7-5a8e-bd15-dc831e458803.jpeg",
+   "collection": "Karlsborg Fortress Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.975,
+   "band": "ge0.7",
+   "saturation": 0.19
+  },
+  {
+   "id": "ea0e201e48e1d6232d2bba7114eb605d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4f6a51de-66d7-543a-b3f0-0c33077cd730.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.828,
+   "band": "ge0.7",
+   "saturation": 0.415
+  },
+  {
+   "id": "bc77dc886c8acd4059b8621a49285fa0",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2f7cf59d-7389-594f-974a-6c92c0dab479.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.986,
+   "band": "ge0.7",
+   "saturation": 0.13
+  },
+  {
+   "id": "d1ad74c6d9829cb656a7cbcb80d2e442",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/13b519a5-5abe-5068-8637-c40783a8174c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.996,
+   "band": "ge0.7",
+   "saturation": 0.276
+  },
+  {
+   "id": "dcf39da22761abef95d255d09045f031",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/af8caef9-1ec7-5c28-affa-5ce95ac9946b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.942,
+   "band": "ge0.7",
+   "saturation": 0.22
+  },
+  {
+   "id": "989aae71f72eed9c5d0227e7f9a3e063",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/777f5ada-8d42-5c3a-9198-87ea7bf0259e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.971,
+   "band": "ge0.7",
+   "saturation": 0.156
+  },
+  {
+   "id": "b5afd5117e9723e0d96cd52792dc46b0",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8ec63448-1297-5509-be5e-37d58f75ffda.png",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.768,
+   "band": "ge0.7",
+   "saturation": 0.603
+  },
+  {
+   "id": "4347aee549e3440a31be1df4d52c0a65",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2999ae04-d7b4-5611-a3f5-1ae4fa68dd4f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.986,
+   "band": "ge0.7",
+   "saturation": 0.253
+  },
+  {
+   "id": "a4e9908207b2a33aa507c393d6add394",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0e37a427-3267-5600-abf7-08c3a08b8a10.jpeg",
+   "collection": "Netherlands Institute for Military History",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.777,
+   "band": "ge0.7",
+   "saturation": 0.222
+  },
+  {
+   "id": "033b20e9e8ad8587d0a92fa8da3e4eb3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0f321ba1-70ee-56e9-b57f-b1c59d548b15.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.969,
+   "band": "ge0.7",
+   "saturation": 0.193
+  },
+  {
+   "id": "184f7a59aff2a1bfd7a4af9820088b6b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2763038c-0a8b-54a8-b124-b5bab4a9f5ac.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.909,
+   "band": "ge0.7",
+   "saturation": 0.218
+  },
+  {
+   "id": "780acb78d000b8b763edf29ee31e4374",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/87f4535a-01a3-5b18-8f84-3e7f5af44893.jpeg",
+   "collection": "European Heritage Awards Archive",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.993,
+   "band": "ge0.7",
+   "saturation": 0.405
+  },
+  {
+   "id": "a86e0b27eec4cd5311293caa04fb93fa",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2a7b892d-355f-543d-b53f-8d923a36b98e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.815,
+   "band": "ge0.7",
+   "saturation": 0.399
+  },
+  {
+   "id": "f6863a7f7d6f9964259beefd91b38780",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9a3a2873-d9bd-53f4-9490-3d2f4e722a2f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.831,
+   "band": "ge0.7",
+   "saturation": 0.124
+  },
+  {
+   "id": "9d8319a491d08a6e086a6a22f30200fd",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c84edb2c-7d42-5b21-b407-357808c692af.jpeg",
+   "collection": "Estonian Sports and Olympic Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.949,
+   "band": "ge0.7",
+   "saturation": 0.396
+  },
+  {
+   "id": "bf886397e35c0ab0f68db8afb573bea2",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7c0cb74c-fb19-5bb1-bd55-73c3ea8f8cfa.jpeg",
+   "collection": "Domkirkeodden",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.926,
+   "band": "ge0.7",
+   "saturation": 0.475
+  },
+  {
+   "id": "e7a820054f2a224047adc8ec4a20e8a7",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9edc0052-8866-5d8f-9110-8ffbe0461356.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.842,
+   "band": "ge0.7",
+   "saturation": 0.423
+  },
+  {
+   "id": "7c3e9c2e763ea719bd9c9bbf8b9b958e",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ebccbc2f-0598-55ef-bffe-e2f320ea2591.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.958,
+   "band": "ge0.7",
+   "saturation": 0.198
+  },
+  {
+   "id": "0697e9328f662512c0336b53070dc0f6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3c2b3bbd-70bc-5c41-b1b6-294d8df1e066.jpeg",
+   "collection": "Allied Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.965,
+   "band": "ge0.7",
+   "saturation": 0.103
+  },
+  {
+   "id": "ea4f57806ed9baf20c20514b5dc081ae",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3f1eac1e-a69d-5579-baed-4fd9d00315ed.jpeg",
+   "collection": "European Heritage Awards Archive",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.918,
+   "band": "ge0.7",
+   "saturation": 0.286
+  },
+  {
+   "id": "dcd72afc326db4ba2e32ed4b3c8f2877",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/74b5ee40-1ea7-59ee-9868-22f85d0f5cd6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.706,
+   "band": "ge0.7",
+   "saturation": 0.416
+  },
+  {
+   "id": "1516ef7218d458f83d44665f5f69428c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/76154161-f86d-52de-bb14-921c4d520d42.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.87,
+   "band": "ge0.7",
+   "saturation": 0.386
+  },
+  {
+   "id": "570fb97b31a645ff506db42f5f74c748",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e195c40e-9c8d-5621-b364-3bfabff6199c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.834,
+   "band": "ge0.7",
+   "saturation": 0.42
+  },
+  {
+   "id": "ded96aa75e2d8be639137566ae51a375",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/453a584f-5b64-59c7-a282-42a68462621b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.757,
+   "band": "ge0.7",
+   "saturation": 0.419
+  },
+  {
+   "id": "2602c1e2b77dfc716e0086782bcd225a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7f66a06d-7325-51cd-9b5f-933d65af8f4b.jpeg",
+   "collection": "Allied Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.997,
+   "band": "ge0.7",
+   "saturation": 0.195
+  },
+  {
+   "id": "32c85823f26ad72d932d8f7966c74815",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5675b473-e01d-5833-ac04-92db17f82992.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.76,
+   "band": "ge0.7",
+   "saturation": 0.101
+  },
+  {
+   "id": "b5ae4667c19337a3cdaa3ee89105cfca",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a95b67eb-9580-54ed-bb8c-64c35f02f32e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.984,
+   "band": "ge0.7",
+   "saturation": 0.332
+  },
+  {
+   "id": "67eb88d9561b42fdff3eb03fdecb7ef7",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/94fc8c94-202e-590f-a14a-53cba19afc12.jpeg",
+   "collection": "Domkirkeodden",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.902,
+   "band": "ge0.7",
+   "saturation": 0.21
+  },
+  {
+   "id": "aebce6f25721201a014dd5921ca5636b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/44209554-5840-597d-a540-1ff19847e609.jpeg",
+   "collection": "Allied Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.999,
+   "band": "ge0.7",
+   "saturation": 0.408
+  },
+  {
+   "id": "6ac3c10b6cafdb5b9f141b03d8913d48",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2907eb80-d19b-569e-bc60-86e569309aa3.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.716,
+   "band": "ge0.7",
+   "saturation": 0.477
+  },
+  {
+   "id": "29a5bee11858ad6d2a8761533a63a8c4",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d58e7a52-002c-555b-aa31-585aaf291e43.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.717,
+   "band": "ge0.7",
+   "saturation": 0.332
+  },
+  {
+   "id": "ea42b1ec810418f17d472b02c256197c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/00c89629-3091-5e53-b420-325724cdf744.jpeg",
+   "collection": "NMNH - Botany Dept.",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.799,
+   "band": "ge0.7",
+   "saturation": 0.493
+  },
+  {
+   "id": "4e3fcbfebae80ae1d3fe149886a27500",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/b0a80777-c89a-5eee-8f29-807731ee5af6.jpeg",
+   "collection": "European Heritage Awards Archive",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.9,
+   "band": "ge0.7",
+   "saturation": 0.228
+  },
+  {
+   "id": "73d30976798d93f2c2858485f361dbf6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/aaccc322-2f28-5a3e-b0bc-d62cf23d53eb.jpeg",
+   "collection": "Netherlands Institute for Military History",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.931,
+   "band": "ge0.7",
+   "saturation": 0.209
+  },
+  {
+   "id": "67105715e9644ca13cabef068937caea",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8631ab32-84d6-5545-b4e3-a538c5be733a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.983,
+   "band": "ge0.7",
+   "saturation": 0.309
+  },
+  {
+   "id": "bdce7c75369822d71d403f937017b75b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8c0244e6-41cf-559d-8a41-d4c394d18a88.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.847,
+   "band": "ge0.7",
+   "saturation": 0.378
+  },
+  {
+   "id": "27ae3de95db5fbd94bbe217a7aedaafd",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a6aa1f45-c3f2-514e-8a05-22010123a629.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.477,
+   "band": "lt0.5",
+   "saturation": 0.337
+  },
+  {
+   "id": "3969a0993c22ec837859eecc5e5f79ad",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/97613464-d835-5d55-9cdf-16571e304536.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.354,
+   "band": "lt0.5",
+   "saturation": 0.397
+  },
+  {
+   "id": "8dfb477d397478a7094edba6e8ea67b6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d2c88870-4ee1-5d5f-8b86-7a08adaf8aa5.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.36,
+   "band": "lt0.5",
+   "saturation": 0.375
+  },
+  {
+   "id": "b1cc6890ff5bf6be501533a1d2447fe9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4dc49127-3147-5cc6-a1ce-f12bb69a5232.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.446,
+   "band": "lt0.5",
+   "saturation": 0.35
+  },
+  {
+   "id": "a03fb15e46a416b09e1f493bb006b412",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5ce469dd-87c7-5342-b33a-fa556a65f571.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.449,
+   "band": "lt0.5",
+   "saturation": 0.349
+  },
+  {
+   "id": "1e44bddbc83c5491a643f3a1581a28b9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4ed818bd-7aa4-530c-86c6-ee5276008915.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.465,
+   "band": "lt0.5",
+   "saturation": 0.224
+  },
+  {
+   "id": "54747aa78c0ff04bd8fc26692f142f5c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1a58416b-4d60-5bf8-a614-61d7936d9950.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.319,
+   "band": "lt0.5",
+   "saturation": 0.408
+  },
+  {
+   "id": "3ee0c37e0235a2a9d4228e386e717ae0",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/35e8b010-d0db-59eb-8342-aabdf3c44ffa.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.43,
+   "band": "lt0.5",
+   "saturation": 0.239
+  },
+  {
+   "id": "305aa3b29b496688e603bafa0e143cf1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/902e0f4a-53f0-55c1-a092-785e82b1f2e4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.352,
+   "band": "lt0.5",
+   "saturation": 0.289
+  },
+  {
+   "id": "bc9eb1dd85fbab7da3843b5aee4bf356",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f980fa59-ae43-5eb1-ab60-91b9064e7d41.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.482,
+   "band": "lt0.5",
+   "saturation": 0.244
+  },
+  {
+   "id": "cd8cf20e6a3151cb3c316d5265b21331",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0cf541bd-e340-56f8-a92d-ccc2cf890100.jpeg",
+   "collection": "NMNH - Invertebrate Zoology Dept.",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.414,
+   "band": "lt0.5",
+   "saturation": 0.126
+  },
+  {
+   "id": "738bd013400c1543845aec7bd98f1a8a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a04e7b01-3ef5-5005-aaef-69b0331f3a73.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.487,
+   "band": "lt0.5",
+   "saturation": 0.105
+  },
+  {
+   "id": "8d6ab8e5fe6fe7c7cdfd57f926cc3430",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/b3a341c7-2551-53d3-80b8-de836124695f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.368,
+   "band": "lt0.5",
+   "saturation": 0.251
+  },
+  {
+   "id": "9ebee05fbb5bab6d697cccb62324b0b1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/48074cf3-a5fc-5248-a789-4ec7bd8e314c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.49,
+   "band": "lt0.5",
+   "saturation": 0.192
+  },
+  {
+   "id": "3b13f59a2ced05c3116224c7821e2ce3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d84d6822-3bf9-5a8b-b081-1c21ec3ba98a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.499,
+   "band": "lt0.5",
+   "saturation": 0.145
+  },
+  {
+   "id": "91743c4e81e8c2b60de86bbafebddb82",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/768bf3f2-5486-57d5-a441-a4dd4cc8fa85.jpeg",
+   "collection": "\u00d6sterlens Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.448,
+   "band": "lt0.5",
+   "saturation": 0.416
+  },
+  {
+   "id": "f8ba6d0ea3a3762c68f67d2b63cf8ed3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/df472d35-4c14-508d-ab25-c7a1c4aeb0f1.jpeg",
+   "collection": "NMNH - Invertebrate Zoology Dept.",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.379,
+   "band": "lt0.5",
+   "saturation": 0.187
+  },
+  {
+   "id": "78e481ac0ca53dbcbb0aafa581612bd9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2c4d20fa-30e4-5593-98e4-1dc4c6b81b53.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.342,
+   "band": "lt0.5",
+   "saturation": 0.26
+  },
+  {
+   "id": "9c88b118b0280049b01d9660f064ccf5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4ecd6528-f771-5a4d-b4ec-4520f8fcb40a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.418,
+   "band": "lt0.5",
+   "saturation": 0.144
+  },
+  {
+   "id": "e95755d0f9f81c28a5cac1ddeaed89ab",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/56e8bca9-3ca2-5ea9-99dd-189cf4051a63.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.453,
+   "band": "lt0.5",
+   "saturation": 0.163
+  },
+  {
+   "id": "4e193aa530f5a3972093e65c15423b1f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e18738e3-166a-5afb-9802-6882c08ceca5.jpeg",
+   "collection": "The Danish Agency for Culture",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.282,
+   "band": "lt0.5",
+   "saturation": 0.128
+  },
+  {
+   "id": "ef0cff8456967ced2a85033ca3b5ea4b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cf205a22-f99f-5bac-81a1-44bc2655e89f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.405,
+   "band": "lt0.5",
+   "saturation": 0.152
+  },
+  {
+   "id": "b186c3b8fda5f4e77df85df892eeb79f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ec88ae56-cb0f-5f1f-b07e-e8e1dc88282b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.479,
+   "band": "lt0.5",
+   "saturation": 0.336
+  },
+  {
+   "id": "776623318c4b6e17a1c6fa5853c92314",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1ce3025f-59b7-5b80-a03d-b20c435949ca.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.495,
+   "band": "lt0.5",
+   "saturation": 0.25
+  },
+  {
+   "id": "bf15b654805b48c2d948406f4b1d2c73",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8ecc3e05-1789-569a-8fe1-523373a79ffa.jpeg",
+   "collection": "Estonian Health Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.404,
+   "band": "lt0.5",
+   "saturation": 0.182
+  },
+  {
+   "id": "6aca17a54f46034a9cb3dcec496e02a3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3ea94c3a-0bcf-5603-a87e-536dc65c8c16.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.473,
+   "band": "lt0.5",
+   "saturation": 0.237
+  },
+  {
+   "id": "4cd222289b685a9c81582ce91c8a313c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6cdc3a3b-af9a-5a24-98dd-dc427810fead.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.425,
+   "band": "lt0.5",
+   "saturation": 0.189
+  },
+  {
+   "id": "a09066a9bf34d296905278298fc4172e",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ba0367d8-b1e0-541f-9179-9fb9a1657594.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.388,
+   "band": "lt0.5",
+   "saturation": 0.153
+  },
+  {
+   "id": "d129d7325c2f3c51266e07125e549f85",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/473de861-802d-5497-ba3c-5f2dc7a8eb1c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.48,
+   "band": "lt0.5",
+   "saturation": 0.292
+  },
+  {
+   "id": "58687b42973632228449fe678e3a86ad",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d38d7360-3886-5ea6-a672-ba92c3eed314.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.327,
+   "band": "lt0.5",
+   "saturation": 0.305
+  },
+  {
+   "id": "7809fef0825ed8e144c2aca869e6584b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f908c127-4b62-5bb5-80aa-fba1627f7af2.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.412,
+   "band": "lt0.5",
+   "saturation": 0.189
+  },
+  {
+   "id": "c6881540bdf96ec8df85281789922081",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/79e0a10b-dc82-5448-8c18-b530ab516a09.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.342,
+   "band": "lt0.5",
+   "saturation": 0.238
+  },
+  {
+   "id": "c7e2893a08cd6397bfc3b169e07c8406",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/045c5451-358d-5ca6-964e-8d06e215a17f.jpeg",
+   "collection": "Cleveland Museum of Art",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.43,
+   "band": "lt0.5",
+   "saturation": 0.456
+  },
+  {
+   "id": "3ca43422b83080b855383213a7558531",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/69e15d04-7c9e-5bf9-b11b-e0a276d66067.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.477,
+   "band": "lt0.5",
+   "saturation": 0.329
+  },
+  {
+   "id": "759038f25aa3316c2c6a4340aa5fe059",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/55f86dff-21f6-5a16-9a13-9c0f93facf4f.jpeg",
+   "collection": "Estonian Sports and Olympic Museum",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.489,
+   "band": "lt0.5",
+   "saturation": 0.12
+  },
+  {
+   "id": "34fccdb7848677ad23bb1b39ab9b6bc5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ce2a31b8-accc-5028-aea1-d95afe47333b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.488,
+   "band": "lt0.5",
+   "saturation": 0.243
+  },
+  {
+   "id": "5d240cf1339f98569af8070dfcca4864",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2a58e23a-cf0e-5db2-8f3b-6704d39db52f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.404,
+   "band": "lt0.5",
+   "saturation": 0.273
+  },
+  {
+   "id": "934cc4ee10f4536c3e107d9c1e4c1fba",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fb3fa4d1-0ccd-5165-b570-e712804ad359.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.438,
+   "band": "lt0.5",
+   "saturation": 0.209
+  },
+  {
+   "id": "e45147acd96f7f3efd0dea7da9654bae",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1b130e8f-7da5-5663-a7af-5c5516872462.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.483,
+   "band": "lt0.5",
+   "saturation": 0.135
+  },
+  {
+   "id": "15f8a5cda7a29108aa0e1ba36ff86394",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f1a06042-da78-57a2-8b32-f0a7566dbe1e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "1980-1999",
+   "clip_era_conf": 0.486,
+   "band": "lt0.5",
+   "saturation": 0.282
+  },
+  {
+   "id": "9c42611ab1ad87614c39380f27baa4cc",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/393bf493-c255-514c-9d41-0856de39423a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.545,
+   "band": "0.5-0.7",
+   "saturation": 0.217
+  },
+  {
+   "id": "58b312d079106c69367c940a3214a2de",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fa500193-72d1-5ce0-b4ba-f7ea43762284.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.549,
+   "band": "0.5-0.7",
+   "saturation": 0.155
+  },
+  {
+   "id": "4873487b7854775b878a4cd6d985c971",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/02b74cc9-1b74-5fe3-9f0e-c2f367f6d6fa.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.609,
+   "band": "0.5-0.7",
+   "saturation": 0.212
+  },
+  {
+   "id": "28348f8f2467b3d44973e7f89c907ee7",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5ccd51d8-ecf4-5db1-8801-5ee0ad69b6fb.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.586,
+   "band": "0.5-0.7",
+   "saturation": 0.486
+  },
+  {
+   "id": "a402a25a5437c8a1d9eb8925ab81af5c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6a4d210d-ce63-531b-8a65-36f1a57adcd4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.626,
+   "band": "0.5-0.7",
+   "saturation": 0.195
+  },
+  {
+   "id": "77a8f9d37ed26908189bb599de151c16",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f4af1fbe-9b34-524c-8581-b5745fc0d372.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.694,
+   "band": "0.5-0.7",
+   "saturation": 0.134
+  },
+  {
+   "id": "0273a74553a79c35ed852986d743daba",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7e15da7c-4dce-5e90-806b-073379e21a6b.jpeg",
+   "collection": "NMNH - Entomology Dept.",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.602,
+   "band": "0.5-0.7",
+   "saturation": 0.115
+  },
+  {
+   "id": "8314123769167e657ae0408814f065ee",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7cd9919b-5eba-58cf-a5d0-9754092d2798.jpeg",
+   "collection": "The Danish Agency for Culture",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.657,
+   "band": "0.5-0.7",
+   "saturation": 0.463
+  },
+  {
+   "id": "b8548ea55914ae1ac37db4c347025430",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/933bc182-c09e-5dd6-ae4f-81c17f04ceef.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.577,
+   "band": "0.5-0.7",
+   "saturation": 0.25
+  },
+  {
+   "id": "9c74e8c19ae878f2fa1ca85ec86c3d48",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/76155bfd-d087-5f87-8f26-f278ccf27e36.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.665,
+   "band": "0.5-0.7",
+   "saturation": 0.266
+  },
+  {
+   "id": "c1091fea2aab6b0280b1a7baa4ef938d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/acc0c32a-82ce-5a91-9462-ebec17b74155.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.641,
+   "band": "0.5-0.7",
+   "saturation": 0.348
+  },
+  {
+   "id": "7a634e159bde5c4f744f3243df9076c1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/349460bb-1572-5a4a-abcc-e2d814fa8bdc.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.649,
+   "band": "0.5-0.7",
+   "saturation": 0.138
+  },
+  {
+   "id": "4f0ef63f2819acd8c2e8b964d90128ea",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9e1aea1e-07f0-5c4c-baa4-1e12dd079a9c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.663,
+   "band": "0.5-0.7",
+   "saturation": 0.476
+  },
+  {
+   "id": "508f45cc47da2d77868558ef94795b6b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/76c1026b-b4cb-5e6a-bded-d2ae74bded45.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.56,
+   "band": "0.5-0.7",
+   "saturation": 0.203
+  },
+  {
+   "id": "5fb7a03728ed6abeac8ad61908d5b5be",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/763700ee-54b2-53bf-8d03-f4722d68f2e4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.572,
+   "band": "0.5-0.7",
+   "saturation": 0.38
+  },
+  {
+   "id": "d20f3fb3df95bd973a3073bd1a8ce6a5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1d83d0ea-6a87-578c-88ac-f5c628a3950e.jpeg",
+   "collection": "NMNH - Paleobiology Dept.",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.649,
+   "band": "0.5-0.7",
+   "saturation": 0.101
+  },
+  {
+   "id": "a4cb0c983d14be73741ff7a0c79d5799",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e199ecea-ee04-5139-aeda-44f100d2ede7.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.693,
+   "band": "0.5-0.7",
+   "saturation": 0.307
+  },
+  {
+   "id": "18f0ca78a4332a6b7dc77b98a70d6b7c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5fa7bf10-6b65-5e45-adcd-8e5650f8a9eb.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.669,
+   "band": "0.5-0.7",
+   "saturation": 0.178
+  },
+  {
+   "id": "0ad6d9c65600ae537c6d293630c22c8e",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/66f9603c-ea3c-55c1-a20f-fc2a4f3d03f3.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.578,
+   "band": "0.5-0.7",
+   "saturation": 0.347
+  },
+  {
+   "id": "a1027479978c6861f3d1902b4f0f9436",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cced0c2d-f4dd-5277-8e80-3f1d168048c8.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.698,
+   "band": "0.5-0.7",
+   "saturation": 0.247
+  },
+  {
+   "id": "6b3423dcca3666258fe2c1c0a20650fe",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e62b7c94-e5f9-5125-b980-2c248a0539d9.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.52,
+   "band": "0.5-0.7",
+   "saturation": 0.399
+  },
+  {
+   "id": "bf1e56500adf1627ca3dcf6885e16cf5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a7893d49-cdf3-523a-8b8a-c030e97d4373.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.684,
+   "band": "0.5-0.7",
+   "saturation": 0.323
+  },
+  {
+   "id": "374c5665cb47a51f9d32e34d0f483a30",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e96e4a71-4439-5ea0-8781-100976f80c94.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.674,
+   "band": "0.5-0.7",
+   "saturation": 0.245
+  },
+  {
+   "id": "829c8c33acc19f462c33177caf725341",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/143b50e3-45a2-5f21-adf2-272ea6419581.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.639,
+   "band": "0.5-0.7",
+   "saturation": 0.43
+  },
+  {
+   "id": "9a89f5e0af485e184a7e5e7375a99258",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5f72aca7-edfe-5860-86fd-08781af4e34c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.523,
+   "band": "0.5-0.7",
+   "saturation": 0.163
+  },
+  {
+   "id": "83cd1ee7d508d832bfd36493ae4353af",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/37d31aad-d197-521a-8b77-c007d041b30d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.685,
+   "band": "0.5-0.7",
+   "saturation": 0.353
+  },
+  {
+   "id": "4e0c44ae43afeb1933de8dfd91bed2c5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c6901ef1-09e8-52a1-a8ff-6829a0e7fc16.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.65,
+   "band": "0.5-0.7",
+   "saturation": 0.186
+  },
+  {
+   "id": "e9ac1636d06287c067fff4a5c6279951",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/06f8b3dc-04c4-5fe4-b01f-8b44eec94d52.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.582,
+   "band": "0.5-0.7",
+   "saturation": 0.255
+  },
+  {
+   "id": "ffc4b3c54508ce5e7b0036526413e81f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/31899ac2-9110-5ced-a87a-29205e040a17.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.68,
+   "band": "0.5-0.7",
+   "saturation": 0.279
+  },
+  {
+   "id": "f7a18e951c3b065ba8cf5972fd26eac8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fb670e48-252a-5339-8692-78dee0113bec.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.637,
+   "band": "0.5-0.7",
+   "saturation": 0.276
+  },
+  {
+   "id": "f6313091f8c02627bf14db99d0242c3b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f92d278e-5cb0-5b9d-80e8-ad9dc3d63bb3.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.617,
+   "band": "0.5-0.7",
+   "saturation": 0.404
+  },
+  {
+   "id": "5f86f65f294314a694b740c43b5e7c27",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d064d013-c38a-5df2-acfe-33c97d43abc6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.668,
+   "band": "0.5-0.7",
+   "saturation": 0.3
+  },
+  {
+   "id": "fdb80597c11d2c1ce034afad09eb46d3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e1fe7238-6c70-502f-995d-f72a23f031e7.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.698,
+   "band": "0.5-0.7",
+   "saturation": 0.273
+  },
+  {
+   "id": "e80cdd41b32b79082db50530df875bb6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/67e5316e-545b-500e-9959-20b3244f0100.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.593,
+   "band": "0.5-0.7",
+   "saturation": 0.236
+  },
+  {
+   "id": "02ac6711ecca425a5d8c6643185cccf6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c2266126-af94-531e-b04d-dd78ca2d8a98.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.612,
+   "band": "0.5-0.7",
+   "saturation": 0.253
+  },
+  {
+   "id": "7e7781baa3f36b1ef5250b2a3815307d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a8f5053b-11a1-554b-a1ca-3166e1052d53.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.549,
+   "band": "0.5-0.7",
+   "saturation": 0.204
+  },
+  {
+   "id": "24dcbe77cbd78009c1f647c1911d9ab9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c210e03a-0cb6-57b5-a0f3-f48f25be314d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.6,
+   "band": "0.5-0.7",
+   "saturation": 0.238
+  },
+  {
+   "id": "f709c941f03c5d5c3b0609eb027470db",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/14ab7423-f750-5dea-85ff-5a6400bc9822.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.554,
+   "band": "0.5-0.7",
+   "saturation": 0.173
+  },
+  {
+   "id": "dd5e36e5622d2abc2a62677b8eb24a11",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/75bef6a5-ab75-56e9-85d1-2856495b0471.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.505,
+   "band": "0.5-0.7",
+   "saturation": 0.486
+  },
+  {
+   "id": "7b46839296cd8592da61ccb0f3b9a136",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cc441c7c-0109-51d0-a975-060875948358.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.566,
+   "band": "0.5-0.7",
+   "saturation": 0.29
+  },
+  {
+   "id": "9085c16c41c055720948ba50b18276f8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/923a8dd7-7848-5096-8fc4-94b739ba08e5.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.679,
+   "band": "0.5-0.7",
+   "saturation": 0.275
+  },
+  {
+   "id": "5e535fe62d53cdbdfe8b9edc22379c56",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/64dbf932-fd8b-563f-8afe-387051d7689f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.628,
+   "band": "0.5-0.7",
+   "saturation": 0.261
+  },
+  {
+   "id": "8ed99ef564dd2ba8505bf18bd75fed05",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e07d352e-407b-538f-9e3b-ff19d7e01dd5.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.626,
+   "band": "0.5-0.7",
+   "saturation": 0.221
+  },
+  {
+   "id": "3a545d962eb4f8718ef28705184569ea",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2bea2e91-e306-5f8d-825e-4eb78f207440.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.646,
+   "band": "0.5-0.7",
+   "saturation": 0.144
+  },
+  {
+   "id": "b083ad867baa93b5ba9d258750bbd770",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/970a7d09-2acf-516f-8877-b787509bbaf7.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.654,
+   "band": "0.5-0.7",
+   "saturation": 0.412
+  },
+  {
+   "id": "ef19c9c7a1a9d0a3dcd3dc18d62e330b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ce2774c2-92ac-5d74-a1d4-c00f706154bb.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.526,
+   "band": "0.5-0.7",
+   "saturation": 0.105
+  },
+  {
+   "id": "5b30c076d26eb5c9e1721a739c562094",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a73ec461-f21d-5cf1-8e01-9ad89aa1cf43.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.666,
+   "band": "0.5-0.7",
+   "saturation": 0.121
+  },
+  {
+   "id": "c2da3fa687b964b289e0a42c7096d810",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/08874a94-b00a-5f3e-a174-43a16071dbd7.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.695,
+   "band": "0.5-0.7",
+   "saturation": 0.155
+  },
+  {
+   "id": "65d3c494c9117238250a374cb52bbd6e",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9d4b5734-5050-59bd-a101-04612448b97c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.68,
+   "band": "0.5-0.7",
+   "saturation": 0.179
+  },
+  {
+   "id": "109dba60dba0a6e18ccc694c151e581d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2f282d6c-31a5-5ad1-a31f-c5193f6f9fac.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.642,
+   "band": "0.5-0.7",
+   "saturation": 0.401
+  },
+  {
+   "id": "6e9af3f467339bb932325da6711201b7",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/bc6156f7-7e8a-5e7b-b1bb-4cd7eb4c6f3d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.61,
+   "band": "0.5-0.7",
+   "saturation": 0.46
+  },
+  {
+   "id": "686327654c63936af0c7d711cfa337f4",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/062b08bf-e532-5b30-bf25-431499b0b901.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.686,
+   "band": "0.5-0.7",
+   "saturation": 0.335
+  },
+  {
+   "id": "bf6a38729a7cfa19758e6bce8dae836a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d2dc4a14-0b16-5e3c-bb7a-15d670070294.jpeg",
+   "collection": "Minneapolis Institute of Art",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.545,
+   "band": "0.5-0.7",
+   "saturation": 0.128
+  },
+  {
+   "id": "f5a3beb1132827f8c99588c269cecd2f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5a154791-80b8-5938-a8be-bb9be8c5e284.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.568,
+   "band": "0.5-0.7",
+   "saturation": 0.334
+  },
+  {
+   "id": "d7d5cfdba7af61553099b3d35db2d79c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/84e5fafd-4e45-56eb-95b1-59938f6d4a3a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.56,
+   "band": "0.5-0.7",
+   "saturation": 0.169
+  },
+  {
+   "id": "9b52d46e9e69520951661ebdd3d3654c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ebd8cd70-ddb0-5b0d-9b0d-975217feae3c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.538,
+   "band": "0.5-0.7",
+   "saturation": 0.372
+  },
+  {
+   "id": "85ba27d11cf1d7f1621d20151e3cbc46",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/232336a9-5d50-52de-b420-32e80e649788.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.62,
+   "band": "0.5-0.7",
+   "saturation": 0.238
+  },
+  {
+   "id": "47e9732eceee29688cdd3a3ba076df05",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/db943077-4c00-552f-b6e0-5d0bfa392b6b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.684,
+   "band": "0.5-0.7",
+   "saturation": 0.173
+  },
+  {
+   "id": "4343e475516368a0862e5dfac4a648f1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ba0e34ed-8335-5cbd-8cf2-2358431a032b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.693,
+   "band": "0.5-0.7",
+   "saturation": 0.165
+  },
+  {
+   "id": "9b57b76217f2446a9a7b18ce90d59743",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fd6fe0c6-29c7-5451-b4c9-95f622b2157c.jpeg",
+   "collection": "NMNH - Entomology Dept.",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.625,
+   "band": "0.5-0.7",
+   "saturation": 0.111
+  },
+  {
+   "id": "d446da0a8390aade281ab363190ddf56",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e3384600-2c5e-5afa-930c-7647c6065ead.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.809,
+   "band": "ge0.7",
+   "saturation": 0.323
+  },
+  {
+   "id": "aec2f47358cdad4dc9e0da126f51b7cb",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/328f9e66-be23-5110-8d60-2b58ead5bc88.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.981,
+   "band": "ge0.7",
+   "saturation": 0.271
+  },
+  {
+   "id": "961bf0c2cc7e27af88aafae8bb28ce94",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0fcf072c-45f6-565a-b3ab-1f5d09be0453.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.931,
+   "band": "ge0.7",
+   "saturation": 0.215
+  },
+  {
+   "id": "79f7e1ea3213cf043023288f5ba1d42c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/03a2f5bf-0c7b-55f7-ad36-a29f9ca6264d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.978,
+   "band": "ge0.7",
+   "saturation": 0.261
+  },
+  {
+   "id": "02dcfd49125a310633e0c340f425ca10",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/75c312c9-f2e4-5319-8d0b-57c8fa9685c6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.941,
+   "band": "ge0.7",
+   "saturation": 0.221
+  },
+  {
+   "id": "0090cfe574c4556ac5a0bbcf5464d42d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fe0be1c1-e6d4-52fe-9eb9-6208dcdf4e66.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.891,
+   "band": "ge0.7",
+   "saturation": 0.272
+  },
+  {
+   "id": "479cdf53b41e7d02d66325d4ea036603",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e05dc87f-93e3-5e98-bf16-298230d707b0.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.858,
+   "band": "ge0.7",
+   "saturation": 0.386
+  },
+  {
+   "id": "062aadbdc74f1ad7e21d70b3e5a7f11b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/77626c34-8303-5ce4-9a5c-0e0073fe645f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.962,
+   "band": "ge0.7",
+   "saturation": 0.201
+  },
+  {
+   "id": "cb0b237602d5def8d5840b4f14707cf8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/992c8c4a-e791-5da5-8133-4bf5a60392da.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.948,
+   "band": "ge0.7",
+   "saturation": 0.394
+  },
+  {
+   "id": "8ea32ef233f202e4199162f183ebd7c7",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a4246551-1c82-5062-a114-62c63c331720.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.856,
+   "band": "ge0.7",
+   "saturation": 0.241
+  },
+  {
+   "id": "763f5c3b69fe4d95aefe7553ed9a3213",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/25e693a2-acb4-57c2-9b39-475aec981633.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.824,
+   "band": "ge0.7",
+   "saturation": 0.148
+  },
+  {
+   "id": "092b5c02339093951448ce2ab631d6b9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4383bb29-81ed-5377-871f-c2f0e934ec0f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.771,
+   "band": "ge0.7",
+   "saturation": 0.415
+  },
+  {
+   "id": "e67eec92192f296121c81f943c10fb9a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/90993763-85f9-5a39-9673-863f05a1efbc.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.889,
+   "band": "ge0.7",
+   "saturation": 0.218
+  },
+  {
+   "id": "b0c02b850cc9579cb78a2b714bf7a6ce",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f35ad662-864a-5f76-a6ed-90e5496d9831.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.94,
+   "band": "ge0.7",
+   "saturation": 0.205
+  },
+  {
+   "id": "3089e63cda43964c82b4456bd54c9e76",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/163bc909-037f-5536-a0aa-3c7ee294c422.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.749,
+   "band": "ge0.7",
+   "saturation": 0.2
+  },
+  {
+   "id": "42c2e8df71b0621f296d98a6996d9021",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e3a246b4-a729-56d5-9081-ff864bf5e111.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.906,
+   "band": "ge0.7",
+   "saturation": 0.571
+  },
+  {
+   "id": "7edd78e63b8bca2f554bd0499b1977ef",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2c8cff3a-982a-5193-be68-bace8a0adf71.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.816,
+   "band": "ge0.7",
+   "saturation": 0.156
+  },
+  {
+   "id": "4445ea7ec71fd38b191575356e5f0887",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/29a51ebe-97cd-5baa-9d9a-df05fb52a9ff.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.977,
+   "band": "ge0.7",
+   "saturation": 0.275
+  },
+  {
+   "id": "b8e9a7c40605cae95f3fd12daeece9aa",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6b9e5e38-ffc0-5763-a29c-ac6c986537e7.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.93,
+   "band": "ge0.7",
+   "saturation": 0.266
+  },
+  {
+   "id": "52681d589658e06bc9c59b5022ec3193",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3a270a23-fec8-5edd-89ca-a900601a4c8c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.941,
+   "band": "ge0.7",
+   "saturation": 0.204
+  },
+  {
+   "id": "5740af17d2c74be9fb0898613ce420c2",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/72c44c44-e097-56ab-8f45-da40b0b6836d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.701,
+   "band": "ge0.7",
+   "saturation": 0.222
+  },
+  {
+   "id": "1338d8efa1e664db5458a2e472ccf1be",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/29aef24a-6eb6-5b71-a65e-ba1eaa8b2552.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.988,
+   "band": "ge0.7",
+   "saturation": 0.243
+  },
+  {
+   "id": "e10e69951e98efaa1a4decc213841367",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e5c334e8-be2c-57ed-8c50-abb0b6405ba6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.818,
+   "band": "ge0.7",
+   "saturation": 0.169
+  },
+  {
+   "id": "47b7e56902dc512b995e348f86974c1a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/90674713-36a5-524a-a926-b1960c7c7d67.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.918,
+   "band": "ge0.7",
+   "saturation": 0.29
+  },
+  {
+   "id": "6e1048d0e339ee0709751f1624c9688d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/06313655-c8f1-50dd-850c-a80fbb38f7a8.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.744,
+   "band": "ge0.7",
+   "saturation": 0.375
+  },
+  {
+   "id": "c325f35bc9212cee04da91de16c8c628",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0d5ee486-c219-52dc-97bf-b1e84e885b3d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.845,
+   "band": "ge0.7",
+   "saturation": 0.492
+  },
+  {
+   "id": "913f18415950021d41220cd69bee6e39",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2a7cfa9f-9d3e-5aa5-9741-7b2f7748185b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.882,
+   "band": "ge0.7",
+   "saturation": 0.166
+  },
+  {
+   "id": "bb0b341a43a04292f1d9def74feef36f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6f3a2fff-e30e-5603-8089-fc4d1f415f14.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.902,
+   "band": "ge0.7",
+   "saturation": 0.168
+  },
+  {
+   "id": "fbfce02fc0bc85c3dacc7cd532a358aa",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e19f4e24-ab94-5ab3-9779-7971e353b7fa.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.776,
+   "band": "ge0.7",
+   "saturation": 0.289
+  },
+  {
+   "id": "1c2fff9f24623b3ef0af27a3fc881833",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fd152673-d8a4-58cb-8766-c8e0fa87a87e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.957,
+   "band": "ge0.7",
+   "saturation": 0.429
+  },
+  {
+   "id": "c7d01c59df787bd8c6824607c5386c2c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2488faba-04d5-5443-8825-a2f39a2a4121.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.92,
+   "band": "ge0.7",
+   "saturation": 0.402
+  },
+  {
+   "id": "b1f77516506de184280cc8914845dace",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/74364622-509f-54d2-b6e7-8afe66b5d12e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.791,
+   "band": "ge0.7",
+   "saturation": 0.11
+  },
+  {
+   "id": "e279390ef9d3855844275b126bf4caeb",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/407c5e21-6f9e-5146-a2a3-8932e932ff10.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.922,
+   "band": "ge0.7",
+   "saturation": 0.486
+  },
+  {
+   "id": "f8c633881553feb1a10b1f81ef448d29",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7ae307a9-eb2b-5c7e-82f6-67e38991a4a1.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.862,
+   "band": "ge0.7",
+   "saturation": 0.291
+  },
+  {
+   "id": "09de736f6d04fe6dab95a746d7df5ba3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f3c72061-e3b6-5cbc-9727-bf153cec0214.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.864,
+   "band": "ge0.7",
+   "saturation": 0.437
+  },
+  {
+   "id": "9e03c4bbb6cdb00430208be117baf136",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/334edf6c-419c-5076-9433-0b5cf0630dbe.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.912,
+   "band": "ge0.7",
+   "saturation": 0.194
+  },
+  {
+   "id": "7d9f26313cc50bbdb37597eba49a2210",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4c9886e3-98de-5b85-930d-9cbc5b442e66.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.973,
+   "band": "ge0.7",
+   "saturation": 0.125
+  },
+  {
+   "id": "68b5a2e8ca024e853de083be819ef17d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/51fdb6e8-2100-587d-b421-37788bd88d8f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.902,
+   "band": "ge0.7",
+   "saturation": 0.208
+  },
+  {
+   "id": "c59c1588c01bea181f1f3258cdcb50ce",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cbc44326-3c0b-5a1f-baa6-b7c90d3a652d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.871,
+   "band": "ge0.7",
+   "saturation": 0.439
+  },
+  {
+   "id": "797488d958e2b24c9618e90d77c73d37",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ae346889-001f-57cd-994c-53a5e7665214.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.78,
+   "band": "ge0.7",
+   "saturation": 0.309
+  },
+  {
+   "id": "9319fff0f507988f9bcb0e2589682ad0",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/529a3fe6-4709-5f2c-afa9-4edd85daf397.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.919,
+   "band": "ge0.7",
+   "saturation": 0.47
+  },
+  {
+   "id": "805f6ab7dbf770ab909dea8200bd33aa",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cac95362-51d9-5ec1-8902-927853f755bb.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.849,
+   "band": "ge0.7",
+   "saturation": 0.352
+  },
+  {
+   "id": "b474fc2da7b956b81b8ef4d6177af742",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/bfcd5106-93fc-56e7-a691-5a83f80d5c7f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.998,
+   "band": "ge0.7",
+   "saturation": 0.301
+  },
+  {
+   "id": "64f98be38bf9ac54df04d6db9f4cd948",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/20e7cbf6-63c2-5eb3-88eb-bca7506d6554.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.974,
+   "band": "ge0.7",
+   "saturation": 0.248
+  },
+  {
+   "id": "316087b05d70cc3c0bdd0b3f74753fa5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ab62a72f-acf9-59b5-bd5b-4568838dc24c.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.877,
+   "band": "ge0.7",
+   "saturation": 0.701
+  },
+  {
+   "id": "020b0d0cf467988244bd1f3ea644c3ac",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c3517d68-ef37-5f3d-86ff-fd562aa1bb61.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.994,
+   "band": "ge0.7",
+   "saturation": 0.28
+  },
+  {
+   "id": "0f8a2f40f509cab28a298c6faf6cdd97",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c6334b14-31c0-57aa-88f7-dca92fdc814b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.908,
+   "band": "ge0.7",
+   "saturation": 0.309
+  },
+  {
+   "id": "a4628f9904d22de88cf2ba5475945c22",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e0725268-271e-521b-b261-b8502b63017f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.976,
+   "band": "ge0.7",
+   "saturation": 0.179
+  },
+  {
+   "id": "847abf84a57979a8ef3183e3293f0cfd",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/05ac364e-4c71-55fe-85bf-ab9435fe6e18.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.77,
+   "band": "ge0.7",
+   "saturation": 0.363
+  },
+  {
+   "id": "db7d4114026d0871ebfbc9ac0892d0b7",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0fe9c937-2bd0-5ff1-8f08-3bb2e7c11831.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.828,
+   "band": "ge0.7",
+   "saturation": 0.342
+  },
+  {
+   "id": "2a71543e87b07e6c07ec0a5a41b1c4a9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2e58631a-b5b6-5f2b-bfb3-44f01021fcf5.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.814,
+   "band": "ge0.7",
+   "saturation": 0.373
+  },
+  {
+   "id": "18c614363add10c891be7ee507909bc0",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/585ab66f-06f8-5da6-ae34-92e0c5ae34aa.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.944,
+   "band": "ge0.7",
+   "saturation": 0.117
+  },
+  {
+   "id": "0ea68106493280959a1811c50f1a5c21",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/75f80c9f-df83-523d-8b3f-c3a7fa2f431f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.926,
+   "band": "ge0.7",
+   "saturation": 0.106
+  },
+  {
+   "id": "c7a9430caac4c2517c158a1c20d89fd8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7928d800-2cb8-5178-8c0e-13ea97c98aaa.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.767,
+   "band": "ge0.7",
+   "saturation": 0.212
+  },
+  {
+   "id": "da999989089c41a348f6fa64db09a565",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/22019a7d-fffe-5667-b95a-f29d89596af3.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.905,
+   "band": "ge0.7",
+   "saturation": 0.227
+  },
+  {
+   "id": "247ebfab8cc5a24e487e532525429e56",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5f819686-7f51-5ab1-9d01-25f05ebe3bf9.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.972,
+   "band": "ge0.7",
+   "saturation": 0.243
+  },
+  {
+   "id": "0e32c0292e4c494041a83c01edb99780",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/10a0b3d6-afc6-550d-bfed-285300c849a4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.945,
+   "band": "ge0.7",
+   "saturation": 0.485
+  },
+  {
+   "id": "3ffe3a5e8ac60ae84eb89dc037f72d14",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a486a53b-c43c-5164-b5a7-296a74533f08.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.943,
+   "band": "ge0.7",
+   "saturation": 0.386
+  },
+  {
+   "id": "361041a96abfba641e56bd7ea621b44b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c83595d3-c3c2-5a62-b91e-df936a3d60a6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.99,
+   "band": "ge0.7",
+   "saturation": 0.284
+  },
+  {
+   "id": "eaf7c3df60e6d74d5c75b156f0ae3b1f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f0e99ea1-b048-587e-bf01-a4032d964cca.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.727,
+   "band": "ge0.7",
+   "saturation": 0.282
+  },
+  {
+   "id": "0e2aa5bd2f4a60ae53b6b986cd35de4c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/439f6be8-40a8-5442-838d-320d115ccc47.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.439,
+   "band": "lt0.5",
+   "saturation": 0.139
+  },
+  {
+   "id": "7d5ae8cc7df61fb617c200c1b23fe250",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e3392981-a9c5-58c8-a849-16bf122476c6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.431,
+   "band": "lt0.5",
+   "saturation": 0.173
+  },
+  {
+   "id": "da1e3baee5f0e7ac4bc636223be21721",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1be2933e-efc9-5ccc-941e-dfea7968bf22.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.388,
+   "band": "lt0.5",
+   "saturation": 0.339
+  },
+  {
+   "id": "7de48584d1b9178b304b933661b9fb24",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0f859bd3-0b49-5ffb-8511-6aaf1e6c091c.png",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.332,
+   "band": "lt0.5",
+   "saturation": 0.318
+  },
+  {
+   "id": "3585817cdfa187b97ffc741be834f2ce",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d920168c-4656-5675-aba1-e6ba0e2c6509.jpeg",
+   "collection": "\u00d6sterlens Museum",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.455,
+   "band": "lt0.5",
+   "saturation": 0.32
+  },
+  {
+   "id": "fdb7aa294ff3fa04478aac09149216ec",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3e041191-f53f-5d6a-9063-3abcf950d60a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.453,
+   "band": "lt0.5",
+   "saturation": 0.191
+  },
+  {
+   "id": "6b4618289f4723db60ade634b9bb9374",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f344cc5f-8a0d-54dc-bd15-cae57cac0ea2.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.437,
+   "band": "lt0.5",
+   "saturation": 0.297
+  },
+  {
+   "id": "0ad0fc2b6c6130cbc80c5d941b265b91",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/02287708-ec39-5747-9bc6-c241fc1efa6c.jpeg",
+   "collection": "Rijksmuseum",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.344,
+   "band": "lt0.5",
+   "saturation": 0.168
+  },
+  {
+   "id": "5424f6282dfcfd0008595240989da23b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/276ecb73-2f2e-5d91-9f55-e2e836d4f86b.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.477,
+   "band": "lt0.5",
+   "saturation": 0.316
+  },
+  {
+   "id": "7430056743aa4f5bdeaa4ade6fdcc12f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/99273226-7450-5f63-97ff-96160cf6c7c3.jpeg",
+   "collection": "Yale University Art Gallery",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.395,
+   "band": "lt0.5",
+   "saturation": 0.34
+  },
+  {
+   "id": "f401083b1c5ea2ec3f733557b2a94a97",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3651a237-5b4f-5513-9b96-8a60ce3c2344.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.449,
+   "band": "lt0.5",
+   "saturation": 0.175
+  },
+  {
+   "id": "8e78186591d12ab2872466890853a039",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/dc3f606a-d345-5c6f-87e3-dd1c312976bb.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.391,
+   "band": "lt0.5",
+   "saturation": 0.417
+  },
+  {
+   "id": "880e9074dbda010ba4f57c3e4cfcb2e6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/4d6b6e25-4d9e-5eed-bb4b-dbc374e77cd2.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.479,
+   "band": "lt0.5",
+   "saturation": 0.219
+  },
+  {
+   "id": "bb136cda23352b98a6ad30004d7e3103",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/0f08dd15-9c7b-5b58-8b05-034268640d31.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.365,
+   "band": "lt0.5",
+   "saturation": 0.162
+  },
+  {
+   "id": "a929eeb9e5b3fea72ca7f817cbeacb8f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ffac4074-f631-519c-a1b6-3f3bb739e2bd.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.447,
+   "band": "lt0.5",
+   "saturation": 0.202
+  },
+  {
+   "id": "5e98baf1e7c478336d6ea550249b9dc8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/6e86d8a6-9901-5e4e-97c5-b419ce3182a8.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.481,
+   "band": "lt0.5",
+   "saturation": 0.293
+  },
+  {
+   "id": "16517c4e7985d452ab625d98fd355c48",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c5b1ba04-04f8-589f-8367-1efa3f0f850a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.498,
+   "band": "lt0.5",
+   "saturation": 0.114
+  },
+  {
+   "id": "d6fdfa9892a6273f89280658bd49b17c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/98123abf-ce66-5656-be79-32de07dfd745.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.468,
+   "band": "lt0.5",
+   "saturation": 0.217
+  },
+  {
+   "id": "81eabf9bb5921ecae20fbbfe2d636d65",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1c6e58ab-8740-592f-864a-dba1fa87f2c6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.429,
+   "band": "lt0.5",
+   "saturation": 0.198
+  },
+  {
+   "id": "64702bb1f4e466acc239cd026239eb22",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/2069908c-573b-57b1-87a1-d31c8bf71ea3.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.42,
+   "band": "lt0.5",
+   "saturation": 0.172
+  },
+  {
+   "id": "62287f8f1302bd1595e86524049cec0a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/cbce9bcc-cb0c-5ace-9f32-bc279f2e0574.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.397,
+   "band": "lt0.5",
+   "saturation": 0.369
+  },
+  {
+   "id": "b90c3f5750c23f79bb437274ae55ecf5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f4cce561-b838-5e8a-8a47-09b2a5ff5293.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.471,
+   "band": "lt0.5",
+   "saturation": 0.229
+  },
+  {
+   "id": "f6683b63619fed8749d6607f755a1ac1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9f8cc2e9-2198-54b0-b740-f14bd6ad225d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.445,
+   "band": "lt0.5",
+   "saturation": 0.135
+  },
+  {
+   "id": "f298cdd9513588a56d4f7f13b712dc06",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a828ebae-234f-5a65-ba69-f3e0d6bf42bc.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.468,
+   "band": "lt0.5",
+   "saturation": 0.526
+  },
+  {
+   "id": "c6fb02eb1a5bfb149ed66bafbbf99ac8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9340515d-7a85-500b-a478-59262cbae322.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.485,
+   "band": "lt0.5",
+   "saturation": 0.12
+  },
+  {
+   "id": "d597986bf7cad3d7c4f15c53e415c27a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e707003f-869c-57b6-a769-ed75a57beb55.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.444,
+   "band": "lt0.5",
+   "saturation": 0.218
+  },
+  {
+   "id": "de7d96c068666e121ff806cb0c97dd9b",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3bab4a8f-bcb9-5d7a-85b2-bff41cfc242d.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.497,
+   "band": "lt0.5",
+   "saturation": 0.219
+  },
+  {
+   "id": "d58fa1a31be085015b1e1ff461444f50",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/a6be6b59-1da6-5c5c-ad80-c9930c8753ae.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.48,
+   "band": "lt0.5",
+   "saturation": 0.117
+  },
+  {
+   "id": "1ee9cf7e9a4a19e83f8b209359eba0bd",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5f5730cc-85fa-510e-97f2-e9378c3578a6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.465,
+   "band": "lt0.5",
+   "saturation": 0.137
+  },
+  {
+   "id": "2eca72892030d755a8b59c220cfc1927",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1e04435d-ed72-562c-bab4-36fa126c1b17.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.429,
+   "band": "lt0.5",
+   "saturation": 0.297
+  },
+  {
+   "id": "7e821f0b38ddb2b50b3d8013c47c7e0c",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d0eac877-b8c8-5e31-8bdd-278a898524fd.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.483,
+   "band": "lt0.5",
+   "saturation": 0.14
+  },
+  {
+   "id": "a24edb8f4c50143b8e040c852c9fcdf1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/05704c68-b317-5d3f-819b-5d3ee281b297.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.444,
+   "band": "lt0.5",
+   "saturation": 0.192
+  },
+  {
+   "id": "7018be524fbf7ee30048b73f1f33fdd4",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/8144f3ed-2426-53d7-8a2c-9e8dee3128e3.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.322,
+   "band": "lt0.5",
+   "saturation": 0.201
+  },
+  {
+   "id": "0b125491ac9540c3b767567eda705d0a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3c648c3e-bd0a-50f5-9325-d3ba675a18aa.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.465,
+   "band": "lt0.5",
+   "saturation": 0.261
+  },
+  {
+   "id": "2eed14a22749c60c2211980674192632",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/1e3cbe96-55df-5f0d-bbc6-9542ca9ac741.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.329,
+   "band": "lt0.5",
+   "saturation": 0.296
+  },
+  {
+   "id": "77766d5561ca749a8dbaa7d138c44d97",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3c27eadb-d41c-5f5c-80e7-dc5b470b61c0.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.368,
+   "band": "lt0.5",
+   "saturation": 0.225
+  },
+  {
+   "id": "530e451110928445c6e0ab1828c373d3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c978adbb-8510-52cb-9c7f-8c1c046b0b44.jpeg",
+   "collection": "Swedish History Museum",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.413,
+   "band": "lt0.5",
+   "saturation": 0.191
+  },
+  {
+   "id": "6d46685c72a78102865c76aa05ac44b6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/743606c9-e673-53e0-a662-63ed5b2a5531.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.412,
+   "band": "lt0.5",
+   "saturation": 0.244
+  },
+  {
+   "id": "1978a01c6918ff493f426213cb7dfc40",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/808b968d-9336-5dfa-9bf9-898eb0d94f40.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.293,
+   "band": "lt0.5",
+   "saturation": 0.135
+  },
+  {
+   "id": "29fa59a2556f35bd5727e51eac1c221a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/7bf66c1a-1a74-5046-9fee-f06cb2856a31.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.469,
+   "band": "lt0.5",
+   "saturation": 0.166
+  },
+  {
+   "id": "dd7c59c8fd2cac2277ea24c41029dcb3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/b03e3fcd-a5ce-511d-a472-93b918dfa782.jpeg",
+   "collection": "Minneapolis Institute of Art",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.485,
+   "band": "lt0.5",
+   "saturation": 0.408
+  },
+  {
+   "id": "9444d3f6bf7fc7b66d76129d785bc33a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/38ca3580-c527-5d3c-8e84-bf22ab7cc92f.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.471,
+   "band": "lt0.5",
+   "saturation": 0.706
+  },
+  {
+   "id": "302bb39aeaccd3e0bf6ee62e0ae7a0c1",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/5b237d0d-3d47-584c-a53c-c1efd6fb102a.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.472,
+   "band": "lt0.5",
+   "saturation": 0.283
+  },
+  {
+   "id": "e9b0949da2a65afa4b26fe9f511ad6b9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f4fbc723-2036-534e-a167-44fdf83b3fc4.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.48,
+   "band": "lt0.5",
+   "saturation": 0.225
+  },
+  {
+   "id": "5108c6b46fcf1659155db338301c45a9",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ee0f6f8f-2423-5bca-b80d-220454d1e76a.jpeg",
+   "collection": "The Danish Agency for Culture",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.434,
+   "band": "lt0.5",
+   "saturation": 0.182
+  },
+  {
+   "id": "48d2a9a260669464a47871ce233c63b6",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/e93e8306-8d04-591f-b0fa-facf8b362ed6.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.414,
+   "band": "lt0.5",
+   "saturation": 0.443
+  },
+  {
+   "id": "d680bd758729a09ae285efb7574cf8e3",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/f156b7f6-ee38-56c4-b688-df6e355b0f03.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.339,
+   "band": "lt0.5",
+   "saturation": 0.264
+  },
+  {
+   "id": "893539e0df4a9fb7d0a6b1a9a20711ed",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/3ea36bde-b5cb-503a-a7a5-70fda662556e.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.467,
+   "band": "lt0.5",
+   "saturation": 0.251
+  },
+  {
+   "id": "64a395cd7e178d76278819ffcc184000",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/d6349e7a-d2a2-5948-a7fe-e7f560ca88a1.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.434,
+   "band": "lt0.5",
+   "saturation": 0.316
+  },
+  {
+   "id": "fa9a9c6621cba1db89405357a0777de0",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/865c5a08-510f-5b61-9f53-c842e35dfa62.jpeg",
+   "collection": "Regional Archive Nijmegen",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.404,
+   "band": "lt0.5",
+   "saturation": 0.149
+  },
+  {
+   "id": "0a6459911be42a3c961578946f71f9a8",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/fe672d42-1aff-590f-86ac-529ba9900e66.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.465,
+   "band": "lt0.5",
+   "saturation": 0.325
+  },
+  {
+   "id": "d534e16a0746a0f2aa1cfa7ab25e64f5",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/bbe6eaa7-d547-5b81-882d-6952c51f8928.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.493,
+   "band": "lt0.5",
+   "saturation": 0.614
+  },
+  {
+   "id": "593954067a05c58817ea0b262d386b2d",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/da6fc903-67f7-5442-abe5-7eb44ce6d946.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.431,
+   "band": "lt0.5",
+   "saturation": 0.28
+  },
+  {
+   "id": "86b3c7da3eda49738d82bee460b2278a",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/efa97ec3-e27b-5823-9c78-83d98dd5f6a0.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.491,
+   "band": "lt0.5",
+   "saturation": 0.31
+  },
+  {
+   "id": "3be3252858cdc95f814ba40da8972dbf",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ab2130fa-f475-57e1-a6f5-e812bf35e676.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.464,
+   "band": "lt0.5",
+   "saturation": 0.197
+  },
+  {
+   "id": "68795677692a15558a4cfd3039e5a568",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/9e80d080-bc8b-54d6-b8ae-8e07f53c5e68.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.479,
+   "band": "lt0.5",
+   "saturation": 0.156
+  },
+  {
+   "id": "134f4c7a48fdbe83816d17591d185c2f",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/ea5cf3af-cc0c-5a01-a92a-df79251f9090.jpeg",
+   "collection": "Wikimedia Commons",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.376,
+   "band": "lt0.5",
+   "saturation": 0.15
+  },
+  {
+   "id": "03c919fa7935f3930a12ec1a5d500956",
+   "url": "https://pd12m.s3.us-west-2.amazonaws.com/images/c5b3ba41-4d3e-5ec7-82c4-c92fd358f575.jpeg",
+   "collection": "Metropolitan Museum of Art",
+   "clip_era": "2000-now",
+   "clip_era_conf": 0.479,
+   "band": "lt0.5",
+   "saturation": 0.103
+  }
+ ]
+}
