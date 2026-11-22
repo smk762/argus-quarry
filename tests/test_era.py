@@ -172,6 +172,7 @@ def test_era_scores_join_the_index_and_filter(cfg):
         "clip_era": "clip-zero-shot",
         "clip_kind": "clip-zero-shot",
         "upload_year": "flickr-upload",
+        "museum_year": "museum-catalogue",
     }
 
 

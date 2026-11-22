@@ -61,7 +61,7 @@ def test_the_sql_ladder_agrees_with_the_python_lookup(points):
     expr = uy.upload_year_sql("i", points)
     lo, hi = points[0][0], points[-1][0]
     probe = sorted({lo - 1, lo, hi, hi + 1, *range(lo, min(hi, lo + 3000)), *range(lo, hi, max(1, (hi - lo) // 5000))})
-    got = dict(duckdb.sql(f"SELECT i, {expr} FROM unnest({probe}::BIGINT[]) t(i)").fetchall())
+    got = dict(duckdb.connect().sql(f"SELECT i, {expr} FROM unnest({probe}::BIGINT[]) t(i)").fetchall())
     assert got == {i: uy.upload_year(points, i) for i in probe}
 
 
@@ -126,7 +126,7 @@ def _megalith(tmp_path: Path) -> Path:
     out = root / "links" / "data" / "megalith-00001-of-00010.parquet"
     out.parent.mkdir(parents=True)
     values = ", ".join("(?, ?, ?)" for _ in links)
-    duckdb.execute(
+    duckdb.connect().execute(
         f"COPY (SELECT * FROM (VALUES {values}) t(url, url_highres, url_source)) TO '{out}' (FORMAT parquet)",
         [v for row in links for v in row.values()],
     )
