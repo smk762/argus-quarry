@@ -26,11 +26,21 @@ def make_image_bytes(size: int = 256, seed: int = 0, fmt: str = "JPEG") -> bytes
 
 
 def make_exif_jpeg(
-    *, original: str | None = None, offset: str | None = None, modified: str | None = None, seed: int = 7
+    *,
+    original: str | None = None,
+    offset: str | None = None,
+    modified: str | None = None,
+    make: str | None = None,
+    model: str | None = None,
+    seed: int = 7,
 ) -> bytes:
-    """A JPEG whose EXIF states the given DateTimeOriginal / OffsetTimeOriginal / IFD0 DateTime."""
+    """A JPEG whose EXIF states the given DateTimeOriginal / OffsetTimeOriginal / IFD0 DateTime / Make / Model."""
     img = Image.open(io.BytesIO(make_image_bytes(seed=seed)))
     exif = Image.Exif()
+    if make is not None:
+        exif[271] = make
+    if model is not None:
+        exif[272] = model
     if modified is not None:
         exif[0x0132] = modified  # IFD0 DateTime: when the file was changed, never a capture date
     sub = exif.get_ifd(0x8769)
