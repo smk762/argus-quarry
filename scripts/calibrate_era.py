@@ -15,8 +15,10 @@ lower bound on the capture date more than the capture date itself. Items split
 by ``hash(id)`` into a fit half and a held-out half; per-label biases are fitted
 on the fit half only, with every era weighted equally (the dated set is mostly
 pre-1946, the archive is not), and every number reported is from the held-out
-half. A second, collection-level check uses iNaturalist (founded 2008: digital
-photos) as known-digital.
+half. Biases are fitted on artworks and documents only (a photo's caption year is
+usually its subject's date) and photo labels keep a zero bias. A second,
+collection-level check uses iNaturalist (founded 2008: digital photos) as
+known-digital and historic-photo archives (:data:`FILM_ARCHIVES`) as known-film.
 
 ``--write-bias`` stores the fitted biases in ``archives/data/era_prompts.json`` and
 prints the new sha256 to pin as ``era.PROMPTS_SHA256``.
@@ -38,6 +40,10 @@ CHUNK = 8192
 #: Caption medium -> zero-shot kind. "object" and unlabelled captions only check the era.
 MEDIUM_KIND = {"photo": "photo", "painting": "artwork", "drawing": "artwork", "print": "artwork", "map": "document",
                "text": "document"}  # fmt: skip
+#: Historic-photo archives in PD12M whose photos are mostly digitised film / glass plates.
+FILM_ARCHIVES = ("Swedish Railway Museum", "Deutsche Fotothek", "Netherlands Institute for Military History",
+                 "Estonian Sports and Olympic Museum", "The Norwegian Museum of Cultural History", "Bohuslän Museum",
+                 "The Utrecht Archives", "Regional Archive Nijmegen")  # fmt: skip
 THRESHOLDS = (0.0, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 
 
@@ -148,9 +154,7 @@ def boundary(p: np.ndarray, era: np.ndarray, kind: np.ndarray, prompts: E.Prompt
     def col(e: np.ndarray) -> np.ndarray:
         return np.clip(e.astype(int) - 2, 0, 3)
 
-    matrix = {
-        cols[r]: np.bincount(col(pe[photo & (col(era) == r)]), minlength=4).tolist() for r in range(4)
-    }
+    matrix = {cols[r]: np.bincount(col(pe[photo & (col(era) == r)]), minlength=4).tolist() for r in range(4)}
     rows = []
     for t in THRESHOLDS:
         chosen = (pk == E.KINDS.index("photo")) & (pe == digital) & (era_p[:, digital] >= t)
@@ -169,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--index", type=Path, required=True, help="the archive's DuckDB index (read-only)")
     ap.add_argument("--vectors", type=Path, nargs="+", required=True, help=".npy matrices in row order")
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--inat-sample", type=int, default=20000, help="iNaturalist items for the known-digital check")
+    ap.add_argument("--ref-sample", type=int, default=20000, help="items per collection-level reference set")
     ap.add_argument("--write-bias", action="store_true", help="store the fitted biases in the prompts file")
     args = ap.parse_args(argv)
 
@@ -177,13 +181,24 @@ def main(argv: list[str] | None = None) -> int:
     raw_prompts.bias[:] = 0  # calibrate from the raw zero-shot scores, whatever the file holds
     con = duckdb.connect(str(args.index), read_only=True)
     dated = con.execute(
-        "SELECT pos, year, medium, hash(id || 'era-split') % 2 = 0 AS fit FROM items "
+        "SELECT pos, year, coalesce(medium, '') AS medium, hash(id || 'era-split') % 2 = 0 AS fit FROM items "
         "WHERE year IS NOT NULL AND pos IS NOT NULL"
     ).fetchnumpy()
-    inat = con.execute(
-        "SELECT pos FROM items WHERE collection = 'iNaturalist' AND pos IS NOT NULL ORDER BY rnd LIMIT ?",
-        [args.inat_sample],
-    ).fetchnumpy()["pos"]
+    # Collection-level references (not caption years): iNaturalist (founded 2008) is digital-native;
+    # the historic-photo archives below are mostly digitised film and glass plates, and their colour
+    # photos are the hard case for #113 (scanned colour film vs digital).
+    refs = {
+        "inaturalist": con.execute(
+            "SELECT pos FROM items WHERE collection = 'iNaturalist' ORDER BY rnd LIMIT ?", [args.ref_sample]
+        ).fetchnumpy()["pos"]
+    }
+    archive_list = ", ".join("?" * len(FILM_ARCHIVES))
+    for tone in ("bw", "color"):
+        refs[f"film_archives_{tone}"] = con.execute(
+            f"SELECT pos FROM items WHERE collection IN ({archive_list}) AND medium = 'photo' AND tone = ? "
+            "ORDER BY rnd LIMIT ?",
+            [*FILM_ARCHIVES, tone, args.ref_sample],
+        ).fetchnumpy()["pos"]
     con.close()
     rows = Rows(args.vectors)
     positions = np.asarray(dated["pos"], dtype=np.int64)
@@ -194,45 +209,52 @@ def main(argv: list[str] | None = None) -> int:
 
     p = probs_for(rows, positions, raw_prompts)
     logits = np.log(np.maximum(p, 1e-12))  # log-softmax: a bias adds to these exactly as to the logits
-    bias = fit_bias(logits[fit], era[fit], kind[fit], raw_prompts)
-    cal = np.exp(logits + bias)
-    cal /= cal.sum(1, keepdims=True)
-    inat_p = probs_for(rows, np.asarray(inat, dtype=np.int64), raw_prompts)
-    inat_cal = np.exp(np.log(np.maximum(inat_p, 1e-12)) + bias)
-    inat_cal /= inat_cal.sum(1, keepdims=True)
+    # Fit only on artworks and documents: a photo's caption year is usually its subject's date
+    # (a 1929 Ford at a car show, a plaque reading 1887), which would drag photo eras early.
+    # Photo labels keep a zero bias.
+    non_photo = fit & np.isin(kind, [E.KINDS.index("artwork"), E.KINDS.index("document")])
+    bias = fit_bias(logits[non_photo], era[non_photo], kind[non_photo], raw_prompts)
+    bias[[i for i, k in enumerate(raw_prompts.kinds) if k == "photo"]] = 0
 
-    def inat_check(pp: np.ndarray) -> dict:
+    def apply(pp: np.ndarray) -> np.ndarray:
+        out = np.exp(np.log(np.maximum(pp, 1e-12)) + bias)
+        return out / out.sum(1, keepdims=True)
+
+    cal = apply(p)
+    ref_p = {name: probs_for(rows, np.asarray(pos, dtype=np.int64), raw_prompts) for name, pos in refs.items()}
+
+    def ref_check(pp: np.ndarray) -> dict:
         ep, kp = pp @ raw_prompts.era_of, pp @ raw_prompts.kind_of
-        return {
+        photo, digital = kp.argmax(1) == 0, ep.argmax(1) == len(E.ERAS) - 1
+        out = {
             "n": len(pp),
-            "photo": round(float((kp.argmax(1) == 0).mean()), 3),
-            "era_2000_now": round(float((ep.argmax(1) == len(E.ERAS) - 1).mean()), 3),
-            "photo_and_2000_now": round(float(((kp.argmax(1) == 0) & (ep.argmax(1) == len(E.ERAS) - 1)).mean()), 3),
+            "photo": round(float(photo.mean()), 3),
+            "photo_and_2000_now": round(float((photo & digital).mean()), 3),
             "era_share": {e: round(float((ep.argmax(1) == i).mean()), 3) for i, e in enumerate(E.ERAS)},
         }
+        for t in (0.5, 0.7):
+            out[f"photo_and_2000_now_conf{t}"] = round(float((photo & digital & (ep[:, -1] >= t)).mean()), 3)
+        return out
 
     held = ~fit
     report = {
         "eras": list(E.ERAS),
         "kinds": list(E.KINDS),
+        "film_archives": list(FILM_ARCHIVES),
         "bias": {lb: round(float(b), 4) for lb, b in zip(raw_prompts.labels, bias, strict=True)},
-        "zero_shot": {
-            "held_out": assess(p[held], era[held], kind[held], raw_prompts),
-            "boundary": boundary(p[held], era[held], kind[held], raw_prompts),
-            "inaturalist": inat_check(inat_p),
-        },
-        "calibrated": {
-            "held_out": assess(cal[held], era[held], kind[held], raw_prompts),
-            "boundary": boundary(cal[held], era[held], kind[held], raw_prompts),
-            "inaturalist": inat_check(inat_cal),
-        },
     }
+    for arm, probs, refp in (("zero_shot", p, ref_p), ("calibrated", cal, {k: apply(v) for k, v in ref_p.items()})):
+        report[arm] = {
+            "held_out": assess(probs[held], era[held], kind[held], raw_prompts),
+            "boundary": boundary(probs[held], era[held], kind[held], raw_prompts),
+            "references": {name: ref_check(v) for name, v in refp.items()},
+        }
     args.out.write_text(json.dumps(report, indent=2))
     for arm in ("zero_shot", "calibrated"):
         h = report[arm]["held_out"]
         print(
             f"{arm:<10} acc {h['accuracy']} balanced {h['balanced_accuracy']} kind {h['kind_accuracy']} "
-            f"iNat photo+digital {report[arm]['inaturalist']['photo_and_2000_now']}",
+            f"refs {[(k, v['photo_and_2000_now']) for k, v in report[arm]['references'].items()]}",
             file=sys.stderr,
         )
     if args.write_bias:

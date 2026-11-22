@@ -344,6 +344,13 @@ def archives_status() -> None:
         vectors = ""
         if semantic:
             vectors = f"  [{semantic['vectors']:,} vectors]" if semantic["indexed"] else "  [embeddings not indexed]"
+        era = info.get("era")
+        if era:
+            if era["scored"] is None:
+                vectors += "  [no CLIP era]"
+            else:
+                stale = "" if era["current"] else ", from an older prompt set: rerun `archives era`"
+                vectors += f"  [CLIP era {era['scored']:,}/{era['of']:,}{stale}]"
         typer.echo(f"  {name:<9} {items:<18} {where}{vectors}")
     if "megalith" in config.archive_dirs:
         from argus_quarry.archives.mirror import MegalithMirror
@@ -461,6 +468,68 @@ def archives_index(
             )
 
 
+@archives_app.command("era")
+def archives_era(
+    name: str = typer.Argument("pd12m", help="Archive whose published embeddings to score (PD12M)"),
+    chunk_rows: int = Option(65_536, "--chunk-rows", min=1024, help="Rows scored per chunk (~200 MB at 65,536)"),
+    limit_rows: int | None = Option(
+        None, "--limit-rows", min=1, help="Score only the first N rows (a sample run; the rest stay unscored)"
+    ),
+    reindex: bool = Option(True, "--reindex/--no-reindex", help="Rebuild the metadata index to pick the scores up"),
+    memory_limit: str = Option(DEFAULT_BUILD_MEMORY, "--memory-limit", help="DuckDB memory ceiling for the reindex"),
+) -> None:
+    """Estimate each image's era and kind (photo / artwork / document) zero-shot from its CLIP embedding.
+
+    Streams the embeddings a chunk at a time against the committed prompt vectors (no text
+    model; needs the [embeddings] extra). Resumable: an interrupted run picks up where it
+    stopped. Reads the local float16 copy from `archives index --embeddings` when there is
+    one, else the archived .npy files.
+    """
+    import time
+
+    from argus_quarry.archives import get_archive
+    from argus_quarry.config import QuarryConfig
+
+    config = QuarryConfig.from_env()
+    with _archive_errors():
+        archive = get_archive(name, config)
+        started = time.monotonic()
+        files = archive.era_vector_files()
+        typer.echo(f"Scoring {name} eras from {files[0].parent} ({len(files)} file(s)) …")
+
+        def progress(done: int, total: int, *, _last: list[float] = [0.0]) -> None:  # noqa: B006
+            now = time.monotonic()
+            if now - _last[0] >= 30 or done == total:
+                _last[0] = now
+                typer.echo(f"  {done:,}/{total:,} rows ({now - started:.0f}s)")
+
+        result = archive.build_era(chunk_rows=chunk_rows, limit_rows=limit_rows, files=files, progress=progress)
+        typer.echo(f"  {result['rows']:,} of {result['total']:,} rows scored ({time.monotonic() - started:.0f}s)")
+        if reindex:
+            started = time.monotonic()
+            n = archive.build_index(memory_limit=memory_limit)
+            typer.echo(f"  reindexed {n:,} items -> {archive.index_path} ({time.monotonic() - started:.0f}s)")
+
+
+@archives_app.command("era-prompts", hidden=True)
+def archives_era_prompts(
+    model_dir: Path = typer.Argument(..., help="Local snapshot of openai/clip-vit-large-patch14"),
+    out: Path | None = Option(None, "--out", help="Default: the package's data/era_prompts.json (a source checkout)"),
+) -> None:
+    """Re-encode the era prompts with the CLIP text tower (offline, CPU; needs [search]). Maintainers only:
+    update era.PROMPTS_SHA256 with the printed sha256, then re-run scripts/calibrate_era.py --write-bias."""
+    from argus_quarry.archives import era
+
+    target = out or Path(era.__file__).parent / "data" / era.PROMPTS_FILE
+    with _archive_errors():
+        try:
+            digest = era.export_prompts(model_dir, target)
+        except era.EraUnavailable as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2) from exc
+    typer.echo(f"{target}  sha256 {digest}")
+
+
 @archives_app.command("search")
 def archives_search(
     name: str = typer.Argument(..., help="pd12m or megalith"),
@@ -474,6 +543,9 @@ def archives_search(
     min_short_side: int | None = Option(None, "--min-short-side", help="Minimum short side in px"),
     semantic: str | None = Option(None, "--semantic", help="Rank by meaning (CLIP text query; needs [search])"),
     similar_to: str | None = Option(None, "--similar-to", help="Rank by likeness to this item id"),
+    clip_era: list[str] | None = Option(None, "--clip-era", help="CLIP zero-shot era, e.g. 2000-now (repeatable)"),
+    clip_kind: list[str] | None = Option(None, "--clip-kind", help="CLIP zero-shot kind: photo, artwork, document"),
+    clip_era_min_conf: float | None = Option(None, "--clip-era-min-conf", min=0, max=1, help="Era probability >="),
     limit: int = Option(20, "--limit", help="Rows to print"),
 ) -> None:
     """Print a page of matches — a quick terminal check before saving a slice."""
@@ -488,6 +560,9 @@ def archives_search(
             min_short_side=min_short_side,
             semantic=semantic,
             similar_to=similar_to,
+            clip_eras=clip_era or [],
+            clip_kinds=clip_kind or [],
+            clip_era_min_conf=clip_era_min_conf,
         )
         page = get_archive(name, QuarryConfig.from_env()).search(query, limit=limit)
     for item in page["items"]:

@@ -40,6 +40,7 @@ from typing import Any, Literal
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from argus_quarry.archives import era as ze
 from argus_quarry.archives import semantic as sem
 from argus_quarry.config import QuarryConfig
 from argus_quarry.models import DEFAULT_CATEGORY, SourceRecord, normalise_category, slugify_name
@@ -55,12 +56,18 @@ DEFAULT_BUILD_MEMORY = "4GB"
 INT_MAX = 2**31 - 1
 ITEM_FIELDS = (
     "id", "url", "thumb_url", "source_url", "caption", "width", "height", "licence", "collection", "mime",
-    "tone", "medium", "year",
+    "tone", "medium", "year", "clip_era", "clip_era_conf", "clip_kind", "clip_kind_conf",
 )  # fmt: skip
+#: Index columns with no source file behind them (an archive without embeddings, or no era scores yet).
+_NO_ERA = (
+    "CAST(NULL AS VARCHAR) AS clip_era, CAST(NULL AS REAL) AS clip_era_conf, "
+    "CAST(NULL AS VARCHAR) AS clip_kind, CAST(NULL AS REAL) AS clip_kind_conf"
+)
 
 #: Bumped whenever the ``items`` columns, or how they are derived, change; an older index asks to be
 #: rebuilt. 3: "The photo shows …" openers count as medium photo. 4: ``pos`` (embedding row).
-INDEX_SCHEMA = 4
+#: 5: ``clip_era`` / ``clip_kind`` (+ confidences) joined from the zero-shot era scores (#19).
+INDEX_SCHEMA = 5
 #: A semantic query ranks at most this many items (the nearest neighbours that pass the filters).
 SEMANTIC_MAX = 5000
 
@@ -153,6 +160,18 @@ class ArchiveQuery(BaseModel):
         None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year >= (items without one are excluded)"
     )
     year_max: int | None = Field(None, ge=-INT_MAX, le=INT_MAX, description="caption-mentioned year <=")
+    clip_eras: list[str] = Field(
+        default_factory=list,
+        description=f"CLIP zero-shot era, any of {', '.join(ze.ERAS)} (archives with embeddings, once "
+        "`archives era` has scored them; unscored items are excluded)",
+    )
+    clip_era_min_conf: float | None = Field(
+        None, ge=0, le=1, description="CLIP zero-shot era probability >= (see docs/era-calibration.md)"
+    )
+    clip_kinds: list[str] = Field(
+        default_factory=list, description=f"CLIP zero-shot picture kind, any of {', '.join(ze.KINDS)}"
+    )
+    clip_kind_min_conf: float | None = Field(None, ge=0, le=1, description="CLIP zero-shot kind probability >=")
     ids: list[str] = Field(default_factory=list, description="explicit selection; other filters still apply")
     sort: Literal["shuffle", "largest"] = Field("shuffle", description="ignored by semantic/similar_to queries")
     semantic: str | None = Field(
@@ -177,6 +196,24 @@ class ArchiveQuery(BaseModel):
     def ranked(self) -> bool:
         """True when results are ordered by embedding similarity rather than ``sort``."""
         return bool(self.semantic or self.similar_to)
+
+    @field_validator("clip_eras")
+    @classmethod
+    def _clip_eras(cls, v: list[str]) -> list[str]:
+        v = [e.strip().lower() for e in v]
+        unknown = sorted(set(v) - set(ze.ERAS))
+        if unknown:
+            raise ValueError(f"unknown era(s) {', '.join(unknown)}; expected any of {', '.join(ze.ERAS)}")
+        return v
+
+    @field_validator("clip_kinds")
+    @classmethod
+    def _clip_kinds(cls, v: list[str]) -> list[str]:
+        v = [k.strip().lower() for k in v]
+        unknown = sorted(set(v) - set(ze.KINDS))
+        if unknown:
+            raise ValueError(f"unknown kind(s) {', '.join(unknown)}; expected any of {', '.join(ze.KINDS)}")
+        return v
 
     @field_validator("mediums")
     @classmethod
@@ -312,6 +349,7 @@ class Archive(ABC):
             "stale": False,
             "items": None,
             "semantic": None,
+            "era": None,
         }
         if self.embedding_model:
             meta = sem.read_pointer(self.config.archive_index_dir, self.name)
@@ -321,6 +359,7 @@ class Archive(ABC):
                 "model": self.embedding_model,
                 "built_at": meta.get("built_at") if meta else None,
             }
+            info["era"] = self.era_status()
         if info["indexed"]:
             try:
                 with self._connect() as con:
@@ -368,16 +407,32 @@ class Archive(ABC):
             con.execute("SET preserve_insertion_order = false")  # lets big CREATE TABLE AS stream
             for statement in self._stage_sql(root):
                 con.execute(statement)
+            era_meta = self._era_scores_meta()
+            era_cols, era_join = _NO_ERA, ""
+            if era_meta:
+                era_cols = "e.clip_era, e.clip_era_conf, e.clip_kind, e.clip_kind_conf"
+                era_join = f" LEFT JOIN ({ze.era_join_sql(self._era_scores_path)}) e ON e.pos = s.pos"
             con.execute(
-                f"CREATE TABLE items AS SELECT *, hash(id || 'argus') AS rnd, {_derived_sql(self.default_medium)} "
-                f"FROM ({self._select_sql(root)})"
+                f"CREATE TABLE items AS SELECT s.*, hash(id || 'argus') AS rnd, {_derived_sql(self.default_medium)}, "
+                f"{era_cols} FROM ({self._select_sql(root)}) s{era_join}"
             )
             if self.embedding_model:
                 # Ranked queries join their hits back by pos: without an index that is a scan
                 # of every row (~1.5 s on PD12M), with it ~5 ms. Archives with no embeddings
                 # have an all-NULL pos and never rank, so they skip it.
                 con.execute("CREATE INDEX items_pos ON items (pos)")
-            con.execute("CREATE TABLE meta AS SELECT ? AS schema_version, now() AS built_at", [INDEX_SCHEMA])
+            if era_meta:
+                n_items = con.execute("SELECT count(*) FROM items").fetchone()[0]
+                if era_meta["total"] != n_items:  # scored over other embeddings: their pos means other items
+                    logger.warning("era_scores_misaligned", archive=self.name, scores=era_meta["total"], items=n_items)
+                    con.execute(
+                        "UPDATE items SET clip_era = NULL, clip_era_conf = NULL, clip_kind = NULL, clip_kind_conf = NULL"
+                    )
+                    era_meta = None
+            con.execute(
+                "CREATE TABLE meta AS SELECT ? AS schema_version, now() AS built_at, ? AS era_prompts_sha256",
+                [INDEX_SCHEMA, era_meta["prompts_sha256"] if era_meta else None],
+            )
             con.execute(
                 "CREATE TABLE facets AS SELECT collection, count(*) AS n FROM items "
                 "WHERE collection IS NOT NULL GROUP BY collection ORDER BY n DESC"
@@ -439,6 +494,76 @@ class Archive(ABC):
         except sem.SemanticUnavailable as exc:
             raise ArchiveUnavailable(str(exc)) from exc
 
+    # ── zero-shot era (#19) ───────────────────────────────────────────
+    @property
+    def _era_scores_path(self) -> Path:
+        return ze.scores_path(self.config.archive_index_dir, self.name)
+
+    def _era_scores_meta(self) -> dict[str, Any] | None:
+        return ze.read_scores_meta(self.config.archive_index_dir, self.name) if self.embedding_model else None
+
+    def era_status(self) -> dict[str, Any] | None:
+        """What the era scores cover and whether they come from the pinned prompt set; None without embeddings."""
+        if not self.embedding_model:
+            return None
+        meta = self._era_scores_meta()
+        return {
+            "scored": meta["rows"] if meta else None,
+            "of": meta["total"] if meta else None,
+            "prompts_sha256": meta["prompts_sha256"] if meta else None,
+            "current": bool(meta and meta["prompts_sha256"] == ze.PROMPTS_SHA256),
+            "built_at": meta["built_at"] if meta else None,
+            "source": "clip-zero-shot",
+        }
+
+    def era_vector_files(self) -> list[Path]:
+        """Where era scoring reads embeddings: the semantic build's local float16 copy when there is one
+        (one sequential read off local disk), else the archived matrices (``items.pos`` order either way)."""
+        meta = sem.read_pointer(self.config.archive_index_dir, self.name)
+        if meta:
+            local = self.config.archive_index_dir / meta["dir"] / "vectors.f16.npy"
+            if local.is_file():
+                return [local]
+        root = self.root
+        if root is None or not root.is_dir():
+            raise ArchiveUnavailable(f"{self.name}: set QUARRY_{self.name.upper()}_DIR to the archived metadata")
+        files = self._embedding_files(root)
+        if not files:
+            raise ArchiveUnavailable(f"{self.name}: no embeddings under {root} (archive them with --embeddings)")
+        return files
+
+    def build_era(
+        self,
+        *,
+        chunk_rows: int = ze.DEFAULT_CHUNK_ROWS,
+        limit_rows: int | None = None,
+        files: list[Path] | None = None,
+        prompts: ze.PromptSet | None = None,
+        progress=None,  # noqa: ANN001
+    ) -> dict[str, Any]:
+        """Score every embedding row against the era prompts into ``<name>.era.parquet`` (resumable).
+
+        The metadata index picks the scores up on its next build (``build_index``), which the
+        CLI runs straight after; until then the index keeps serving the previous scores.
+        """
+        if not self.embedding_model:
+            raise ArchiveUnavailable(f"{self.name}: this archive publishes no embeddings, so no CLIP era")
+        with self._connect() as con:
+            n = con.execute("SELECT count(*) FROM items").fetchone()[0]
+        try:
+            return ze.build_scores(
+                files or self.era_vector_files(),
+                self.config.archive_index_dir,
+                self.name,
+                expected_rows=n,
+                prompts=prompts,
+                chunk_rows=chunk_rows,
+                limit_rows=limit_rows,
+                progress=progress,
+            )
+        except ze.EraUnavailable as exc:
+            raise ArchiveUnavailable(str(exc)) from exc
+
     # ── read path ─────────────────────────────────────────────────────
     def _connect(self):
         if not self.index_path.is_file():
@@ -495,6 +620,14 @@ class Archive(ABC):
         _in("mime", query.mimes)
         _in("id", query.ids)
         _in("medium", query.mediums)
+        _in("clip_era", query.clip_eras)
+        _in("clip_kind", query.clip_kinds)
+        if query.clip_era_min_conf is not None:
+            clauses.append("clip_era_conf >= ?")
+            params.append(query.clip_era_min_conf)
+        if query.clip_kind_min_conf is not None:
+            clauses.append("clip_kind_conf >= ?")
+            params.append(query.clip_kind_min_conf)
         if query.tone:
             clauses.append("tone = ?")
             params.append(query.tone)
@@ -647,6 +780,12 @@ class Archive(ABC):
                 "SELECT medium, count(*) FROM items WHERE medium IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
             ).fetchall()
             dated, year_lo, year_hi = con.execute("SELECT count(year), min(year), max(year) FROM items").fetchone()
+            clip_eras = con.execute(
+                "SELECT clip_era, count(*) FROM items WHERE clip_era IS NOT NULL GROUP BY 1"
+            ).fetchall()
+            clip_kinds = con.execute(
+                "SELECT clip_kind, count(*) FROM items WHERE clip_kind IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
+            ).fetchall()
             total = con.execute("SELECT count(*) FROM items").fetchone()[0]
         return {
             "total": total,
@@ -659,6 +798,11 @@ class Archive(ABC):
             "mediums": [{"name": c, "count": n} for c, n in mediums],
             "dated": dated,
             "year_range": [year_lo, year_hi] if dated else None,
+            # Where each date-ish field comes from, so a UI can say so next to the filter.
+            "date_sources": {"year": "caption", "clip_era": "clip-zero-shot", "clip_kind": "clip-zero-shot"},
+            "clip_scored": sum(n for _, n in clip_eras),
+            "clip_eras": [{"name": e, "count": dict(clip_eras).get(e, 0)} for e in ze.ERAS if e in dict(clip_eras)],
+            "clip_kinds": [{"name": c, "count": n} for c, n in clip_kinds],
         }
 
     def get(self, item_id: str) -> dict[str, Any] | None:

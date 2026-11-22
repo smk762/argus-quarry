@@ -49,7 +49,7 @@ KINDS: tuple[str, ...] = ("photo", "artwork", "document")
 PROMPTS_FILE = "era_prompts.json"
 #: sha256 of ``data/era_prompts.json``. Regenerate the file with ``argus-quarry archives
 #: era-prompts`` (needs the [search] extra and the model weights) and update this with it.
-PROMPTS_SHA256 = "UNSET"
+PROMPTS_SHA256 = "838913006bde10cf4bd5b46751aa00043908d174148f8f67b254c88646084745"
 #: The text tower the prompts were encoded with: the space PD12M published its embeddings in.
 MODEL_REPO = "openai/clip-vit-large-patch14"
 #: Rows scored per chunk: 65,536 x 768 float32 is ~200 MB, whatever the archive's size.
@@ -263,7 +263,9 @@ def export_prompts(model_dir: Path, output: Path, *, revision: str | None = None
     except ImportError as exc:
         raise EraUnavailable("exporting prompts requires: pip install argus-quarry[search]") from exc
     np = _np()
-    weights = next((model_dir / n for n in ("model.safetensors", "pytorch_model.bin") if (model_dir / n).is_file()), None)
+    weights = next(
+        (model_dir / n for n in ("model.safetensors", "pytorch_model.bin") if (model_dir / n).is_file()), None
+    )
     if weights is None:
         raise EraUnavailable(f"{model_dir}: no model.safetensors / pytorch_model.bin")
     h = hashlib.sha256()
@@ -334,9 +336,7 @@ def read_scores_meta(root: Path, name: str) -> dict[str, Any] | None:
     try:
         con = _duckdb().connect()
         try:
-            kv = con.execute(
-                "SELECT decode(key), decode(value) FROM parquet_kv_metadata(?)", [str(path)]
-            ).fetchall()
+            kv = con.execute("SELECT decode(key), decode(value) FROM parquet_kv_metadata(?)", [str(path)]).fetchall()
             rows = con.execute("SELECT count(*) FROM read_parquet(?)", [str(path)]).fetchone()[0]
         finally:
             con.close()
@@ -410,7 +410,7 @@ def build_scores(
             x = sem._read_rows(mats, starts, lo, hi)  # unit length, float32
             s = prompts.score(x)
             del x
-            chunk = {"pos": np.arange(lo, hi, dtype=np.int64), **s}  # noqa: F841  (scanned by name below)
+            chunk = {"pos": np.arange(lo, hi, dtype=np.int64), **s}  # DuckDB scans it by name below
             tmp = part.with_suffix(".tmp")
             con.execute(f"COPY (SELECT * FROM chunk) TO '{_sql(tmp)}' (FORMAT parquet)")
             os.replace(tmp, part)
