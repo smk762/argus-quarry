@@ -190,7 +190,7 @@ def test_pool_paths_are_relative_to_quarry_home():
 
 @pytest.mark.parametrize(
     "leak",
-    ["/home/someone/quarry", "/Users/someone/x", "192.168.1.20", "10.0.0.5", "someone@example.com", "/mnt/nas/pool"],
+    ["/home/someone/quarry", "/Users/someone/x", "192.168.200.20", "10.0.0.5", "someone@example.com", "/mnt/nas/pool"],
 )
 def test_a_leak_anywhere_fails_the_build(leak):
     entry = _entry("pd.jpg", "Public domain", "failed")
