@@ -21,3 +21,5 @@ uv.lock
 # default published view (DATASET_DIR = ./data) produced by `export`.
 quarry/
 data/
+# ...but not package data (the pinned CLIP era prompt vectors).
+!src/argus_quarry/archives/data/

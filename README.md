@@ -329,6 +329,27 @@ argus-quarry archives fetch slice.json            # --dry-run lists the URLs fir
 
 Neither archive carries capture dates (Megalith's archived EXIF has none), so the year filter only finds images whose caption states a year. Rebuild old indexes after upgrading: an index from an older quarry reports `stale` and asks for `archives index`.
 
+### CLIP era and kind (PD12M)
+
+For dates beyond the 0.5% of captions that name a year, `archives era` estimates each PD12M image's **era** and **kind** zero-shot from its published CLIP ViT-L/14 embedding. It scores the embedding against fixed prompts ("a photograph from the 1950s", "a smartphone photo", "a 17th-century painting", …) in the space PD12M published its embeddings in. The prompt vectors were encoded once with the matching text tower and are committed as `archives/data/era_prompts.json`, pinned by sha256. Scoring is one matrix product per chunk, so it needs no text model and no torch, only `[embeddings]`.
+
+```bash
+argus-quarry archives era pd12m                       # scores all 12.4M rows, then rebuilds the metadata index
+argus-quarry archives era pd12m --limit-rows 1000000  # a sample: the first 1M rows; the rest stay unscored
+argus-quarry archives search pd12m --clip-kind photo --clip-era 2000-now --clip-era-min-conf 0.7 --q woman
+```
+
+| Filter | Values | Stored as |
+|---|---|---|
+| `clip_eras` / `?clip_era=` | `pre1800`, `1800s`, `1900-1945`, `1946-1979`, `1980-1999`, `2000-now` | `clip_era`, `clip_era_conf` (the era's probability) |
+| `clip_kinds` / `?clip_kind=` | `photo`, `artwork`, `document` | `clip_kind`, `clip_kind_conf` |
+| `clip_era_min_conf`, `clip_kind_min_conf` | 0–1 | |
+
+- **The names say where the value came from.** `year` is caption-mentioned and `clip_*` is the zero-shot estimate. Facets carry `date_sources` so a UI can label each one. Unscored items (Megalith, or rows past a sample run) are left out by a `clip_*` filter, never guessed.
+- **"Photo, digital era"** is `clip_kind=photo&clip_era=2000-now`, and "pre-digital" is the other five eras. `2000-now` approximates the digital-camera era: consumer digital overtook film around 2003–2005.
+- **Precision** is measured on a held-out half of the 61k caption-dated items, plus collection-level references, in [docs/era-calibration.md](docs/era-calibration.md). Read it before you trust a bucket. In short, photo versus digital holds up: 99.2% of iNaturalist photos read as photo and 2000-now, against 0.3% of historic-archive photos. The finer periods are coarse, with about 62% balanced accuracy.
+- **The run** streams the embeddings a chunk at a time (65,536 rows, about 200 MB), writes each chunk as it goes, and resumes after an interruption. It reads the local float16 copy from `archives index --embeddings` when there is one, else the archived `.npy` files. From the NAS share it scored 1M rows in 40 s, so a full pass takes about 9 minutes plus a 1-minute reindex. Its peak RSS was 3.3 GB, all of it the reindex. Scores live in `$QUARRY_HOME/cache/archives/pd12m.era.parquet`, and every `archives index` joins them back on the embedding row.
+
 Caption terms (`q`, `exclude`, `--q`, `--exclude`) are case-insensitive substrings. Every term in `q` must appear and none in `exclude` may; `"quoted phrases"` stay whole, and a leading `-` in `q` excludes a term (`harbor boats -painting`). An uncaptioned item doesn't mention anything, so an exclusion keeps it.
 
 A slice is a query plus where it lands:
@@ -382,9 +403,9 @@ The server exposes the same thing over HTTP. Every route is `GET` except the fet
 
 | Route | Returns |
 |---|---|
-| `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`, and `semantic`: `{indexed, vectors, model, built_at}` or `null` when the archive has no embeddings) and `fetch_allowed` |
-| `GET /archives/{name}/facets` | collections, licences and MIME types with counts |
-| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
+| `GET /archives` | each archive's status (`configured`, `present`, `indexed`, `items`, and `semantic`: `{indexed, vectors, model, built_at}` or `null` when the archive has no embeddings, and `era`: `{scored, of, prompts_sha256, current, built_at, source}` or `null`) and `fetch_allowed` |
+| `GET /archives/{name}/facets` | collections, licences and MIME types with counts; `clip_eras` / `clip_kinds` with counts, `clip_scored`, and `date_sources` (which fields are caption-derived and which are CLIP zero-shot) |
+| `GET /archives/{name}/search?q=&exclude=&collection=&licence=&mime=&min_width=&min_height=&min_short_side=&orientation=&sized_only=&tone=&medium=&year_min=&year_max=&clip_era=&clip_era_min_conf=&clip_kind=&clip_kind_min_conf=&ids=&sort=&limit=&offset=` | `{total, offset, limit, items}`; `sort` is `shuffle` (fixed per index) or `largest`. Repeat `collection` or comma-join it with no space after the comma (institution names like `Natural History Museum, Berlin` keep theirs); `medium` must be one of `photo`, `painting`, `drawing`, `print`, `map`, `text`, `object` (422 otherwise). Add `semantic=<text>` or `similar_to=<id>` to [rank by similarity](#semantic-search-pd12m): then `ranked` is true and each item has a `score` |
 | `GET /archives/{name}/items/{id}` | one item |
 | `GET /archives/{name}/thumb?id=&size=` | WEBP rendered in memory (PD12M), or a 307 to Flickr's own 500px rendition (Megalith) |
 | `GET /archives/{name}/slice?<search filters>&category=&subject=&limit=` | `{slice, matches, will_fetch, command, fetch_allowed}` |
