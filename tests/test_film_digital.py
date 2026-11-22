@@ -84,3 +84,45 @@ def test_the_committed_sample_is_blind_balanced_and_iNaturalist_free():
     assert "clip_era" not in template and "conf" not in template.lower().replace(
         "confidence", ""
     )  # the page stays blind
+
+
+@pytest.mark.parametrize(
+    ("make", "model", "verdict"),
+    [
+        ("Nikon", "Nikon SUPER COOLSCAN 9000 ED", "film"),
+        ("EPSON", "Perfection V800/V850", "film"),
+        ("NORITSU KOKI", "EZ Controller", "film"),
+        ("HP", "HP Scanjet G2710", "film"),
+        ("NIKON", "COOLPIX AW100", "digital"),
+        ("Apple", "iPhone 8", "digital"),
+        ("", "", None),  # no device named: no reference, never a guess
+    ],
+)
+def test_the_exif_device_decides_film_or_digital(make, model, verdict):
+    assert fds.exif_verdict(make, model) == verdict
+
+
+def test_agreement_scores_a_rater_on_the_items_the_reference_covers():
+    reference = {"a": "digital", "b": "film", "c": "digital"}
+    rater = {"a": "film", "b": "film", "c": "unsure", "d": "digital"}  # d: not in the reference
+    got = fds.agreement(reference, rater)
+    assert got["compared"] == 2 and got["agree"] == 1 and got["rater_unsure"] == 1
+    assert got["pairs"] == {"reference digital / rater film": 1, "reference film / rater film": 1}
+
+
+def test_worst_case_counts_uncovered_items_as_film(tmp_path):
+    sample = _sample({"2000-now|ge0.7": 4}, {"2000-now|ge0.7": 100})
+    (tmp_path / "s.json").write_text(json.dumps(sample))
+    (tmp_path / "ref.json").write_text(
+        json.dumps({"labels": {"2000-now|ge0.7#0": "digital", "2000-now|ge0.7#1": "digital"}})
+    )
+    args = type(
+        "A", (), {"sample": tmp_path / "s.json", "labels": tmp_path / "ref.json", "worst_case": True, "compare": None}
+    )
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        fds.cmd_report(args)
+    assert json.loads(buf.getvalue())["precision_2000_now"]["conf>=0.7"]["digital_share"] == 0.5

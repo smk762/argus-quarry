@@ -5,11 +5,13 @@
         --index $QUARRY_HOME/cache/archives/pd12m.duckdb --scores <dir>/pd12m.era.parquet \\
         --out docs/film-digital/sample.json --thumbs <dir>/thumbs
 
-    # 2. label it (the labelling page), export the labels to docs/film-digital/labels.json
+    # 2. label it (the labelling page), export the labels to docs/film-digital/labels-person.json
+    #    and build the objective reference from each file's EXIF device (`exif`)
 
     # 3. report precision of clip_kind=photo&clip_era=2000-now at the documented thresholds
     uv run --no-sync python scripts/film_digital_set.py report \\
-        --sample docs/film-digital/sample.json --labels docs/film-digital/labels.json
+        --sample docs/film-digital/sample.json --labels docs/film-digital/exif.json \\
+        --compare docs/film-digital/labels-person.json
 
 Why stratified: the archive's 2000-now photos are 87% at conf >= 0.7, so a plain random draw
 would say almost nothing about the low-confidence bands where film scans would hide. Each
@@ -30,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -205,6 +208,50 @@ def report(sample: dict, labels: dict[str, str]) -> dict:
     }
 
 
+#: Devices whose EXIF marks a scan of film or a print. Every other camera or phone model is a digital capture.
+SCANNER = re.compile(r"scan|coolscan|perfection|noritsu|ez controller|pentacon", re.IGNORECASE)
+
+
+def exif_verdict(make: str, model: str) -> str | None:
+    """``film`` for a film scanner, ``digital`` for a camera or phone, None when the file names no device."""
+    if not model.strip():
+        return None
+    return "film" if SCANNER.search(f"{make} {model}") else "digital"
+
+
+def cmd_exif(args: argparse.Namespace) -> int:
+    """An objective reference: the device each sampled file's EXIF names (PD12M's S3 copies keep it)."""
+    import io
+
+    from PIL import Image
+
+    from argus_quarry.config import QuarryConfig, SourceRate
+    from argus_quarry.net import NetClient
+
+    sample = json.loads(args.sample.read_text())
+    config = QuarryConfig.from_env()
+    config.rates.setdefault("pd12m-s3", SourceRate(rate_per_sec=4, burst=4))
+    out: dict[str, dict] = {}
+    with NetClient(config) as net:
+        for it in sample["items"]:
+            dest = args.cache / f"{it['id']}.img"
+            try:
+                if not dest.exists():
+                    net.download(it["url"], dest, source="pd12m-s3", max_bytes=80 * 1024 * 1024)
+                with Image.open(io.BytesIO(dest.read_bytes())) as im:
+                    exif = im.getexif()
+                make = str(exif.get(271) or "").strip("\x00 ")
+                model = str(exif.get(272) or "").strip("\x00 ")
+            except Exception as exc:  # unreadable: no reference for this item
+                print(f"  {it['id']}: {exc}", file=sys.stderr)
+                make = model = ""
+            out[it["id"]] = {"make": make, "model": model, "verdict": exif_verdict(make, model)}
+    labels = {i: v["verdict"] for i, v in out.items() if v["verdict"]}
+    args.out.write_text(json.dumps({"labels": dict(sorted(labels.items())), "devices": out}, indent=1) + "\n")
+    print(f"{len(labels)} of {len(out)} name a device -> {args.out}", file=sys.stderr)
+    return 0
+
+
 def cmd_page(args: argparse.Namespace) -> int:
     """The labelling page: blind (ids and image paths only), in a fixed shuffled order, beside its images."""
     import random
@@ -249,14 +296,35 @@ def cmd_labels(args: argparse.Namespace) -> int:
     return 0
 
 
+def agreement(reference: dict[str, str], labels: dict[str, str]) -> dict:
+    """How a rater's decided labels compare with a reference, on the items both cover."""
+    both = [i for i in labels if i in reference and labels[i] != "unsure"]
+    pairs: dict[str, int] = {}
+    for i in both:
+        key = f"reference {reference[i]} / rater {labels[i]}"
+        pairs[key] = pairs.get(key, 0) + 1
+    return {
+        "compared": len(both),
+        "agree": sum(reference[i] == labels[i] for i in both),
+        "rater_unsure": sum(1 for i in labels if i in reference and labels[i] == "unsure"),
+        "pairs": pairs,
+    }
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     sample = json.loads(args.sample.read_text())
     labels = json.loads(args.labels.read_text())
     labels = labels.get("labels", labels)
+    if args.worst_case:  # every item the reference doesn't cover counted against precision
+        labels = {**{it["id"]: "film" for it in sample["items"]}, **labels}
     unknown = sorted(set(labels.values()) - {"digital", "film", "unsure"})
     if unknown:
         raise SystemExit(f"unknown label value(s): {unknown}")
-    print(json.dumps(report(sample, labels), indent=2))
+    out = report(sample, labels)
+    for path in args.compare or []:
+        rater = json.loads(path.read_text())
+        out.setdefault("agreement", {})[path.name] = agreement(labels, rater.get("labels", rater))
+    print(json.dumps(out, indent=2))
     return 0
 
 
@@ -274,15 +342,22 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--thumbs", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--seed", type=int, default=5555, help="the page's presentation order")
-    lb = sub.add_parser("labels", help="the page's stored labels -> labels.json")
+    lb = sub.add_parser("labels", help="the page's stored labels -> a labels file")
     lb.add_argument("--sample", type=Path, required=True)
     lb.add_argument("--export", type=Path, required=True, help="read_db export: a directory or a JSON list")
     lb.add_argument("--out", type=Path, required=True)
     r = sub.add_parser("report", help="precision from the labels")
     r.add_argument("--sample", type=Path, required=True)
     r.add_argument("--labels", type=Path, required=True, help='{"labels": {id: "digital"|"film"|"unsure"}}')
+    r.add_argument("--worst-case", action="store_true", help="count items the labels don't cover as film")
+    r.add_argument("--compare", type=Path, nargs="*", help="other raters' labels, scored against --labels")
+    e = sub.add_parser("exif", help="the objective reference: each file's EXIF device")
+    e.add_argument("--sample", type=Path, required=True)
+    e.add_argument("--cache", type=Path, required=True, help="where the downloaded originals are kept")
+    e.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
-    return {"sample": cmd_sample, "page": cmd_page, "labels": cmd_labels, "report": cmd_report}[args.cmd](args)
+    commands = {"sample": cmd_sample, "page": cmd_page, "labels": cmd_labels, "exif": cmd_exif, "report": cmd_report}
+    return commands[args.cmd](args)
 
 
 if __name__ == "__main__":
