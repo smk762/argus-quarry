@@ -36,7 +36,7 @@ dependencies = [
     "Pillow>=10.0",
     "PyYAML>=6.0",
     # The suite's shared Provenance shape, written into each export sidecar (argus-cortex#31).
-    "argus-cortex>=0.7.0,<0.10",
+    "argus-cortex>=0.14,<0.15",
 ]
 
 [project.optional-dependencies]
