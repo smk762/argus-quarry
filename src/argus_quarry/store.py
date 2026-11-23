@@ -11,8 +11,9 @@ writer plus safe concurrent readers.
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
+
+from argus_cortex.timestamps import utc_now_iso
 
 from argus_quarry.models import DEFAULT_CATEGORY, Photograph, Subject, normalise_category
 
@@ -79,10 +80,6 @@ CREATE INDEX IF NOT EXISTS idx_photographs_category ON photographs(category);
 
 #: ``PRAGMA user_version`` while a legacy pool's flat-layout files still await relocation.
 _RELOCATION_PENDING = 1
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def has_wal_content(db_path: Path) -> bool:
@@ -482,7 +479,7 @@ class ProvenanceStore:
                 height,
                 file_size,
                 phash,
-                _now(),
+                utc_now_iso(),
                 fetched_from,
                 captured_at,
                 captured_at_source if captured_at else None,
