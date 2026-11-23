@@ -36,7 +36,7 @@ dependencies = [
     "Pillow>=10.0",
     "PyYAML>=6.0",
     # The suite's shared Provenance shape, written into each export sidecar (argus-cortex#31).
-    "argus-cortex>=0.14,<0.15",
+    "argus-cortex>=0.16,<0.17",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +44,8 @@ cli = ["typer>=0.12", "rich>=13.0"]
 # pHash is opportunistic, informational metadata only (never drives dedup here).
 phash = ["ImageHash>=4.3"]
 # Read-only provenance API — `argus-quarry serve` (see DESIGN.md section 9).
-server = ["fastapi>=0.110", "uvicorn>=0.27"]
+# cortex's `server` extra is what `argus_cortex.service.install_health` (GET /health) needs.
+server = ["fastapi>=0.110", "uvicorn>=0.27", "argus-cortex[server]>=0.16,<0.17"]
 # Search + slice large public-domain metadata archives (PD12M, Megalith-10m) —
 # `argus-quarry archives …` and the server's /archives routes.
 archives = ["duckdb>=1.1"]
@@ -59,12 +60,13 @@ all = [
     "ImageHash>=4.3",
     "fastapi>=0.110",
     "uvicorn>=0.27",
+    "argus-cortex[server]>=0.16,<0.17",
     "duckdb>=1.1",
     "faiss-cpu>=1.8",
     "numpy>=1.26",
 ]
 # fastapi is here so the server tests run (they importorskip it otherwise).
-dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "httpx2>=2.7", "duckdb>=1.1", "faiss-cpu>=1.8", "numpy>=1.26"]
+dev = ["pytest>=8.0", "ruff>=0.5", "ImageHash>=4.3", "fastapi>=0.110", "argus-cortex[server]>=0.16,<0.17", "httpx2>=2.7", "duckdb>=1.1", "faiss-cpu>=1.8", "numpy>=1.26"]
 
 [project.scripts]
 argus-quarry = "argus_quarry.cli:app"

@@ -20,6 +20,8 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Changed
 
+- **argus-cortex 0.16** (was 0.14; smk762/argus-cortex#212). `GET /health` is now served by cortex's `install_health`, so its body is the suite's `ServiceHealth`. `status`, `service`, `version`, `quarry_home` and `fetch_allowed` keep their names and meaning, and the route still answers `200` whenever the process is up, without touching the pool. New fields: `service_version`, `started_at`, `wire`, `capabilities`, `checks` (empty: no dependency checks), `read_only` (true unless `QUARRY_ALLOW_FETCH=1`), `build` and `peer` (from `ARGUS_BUILD` and `ARGUS_PEER`). The response carries `Cache-Control: no-store`, and the route is no longer listed in `/openapi.json`. The `server` extra now installs `argus-cortex[server]`. The README shows the `argus.peer: quarry` compose labels.
+- Export sidecars: the `provenance` block gains cortex 0.16's `lookalike` (`null`) and derived `demo_ready` (`false`). Nothing else in the sidecar changes.
 - The archive index schema is now 7 (the `clip_*` columns, then `upload_year`, then `museum_*`). Older indexes report `stale` until `archives index` rebuilds them.
 - `NetClient.get_json` no longer retries a permanent error: `403`/`404`/`410` raise `RemoteGone` and any other non-transient status raises `httpx.HTTPStatusError` on the first response, instead of `RuntimeError` after every retry and backoff.
 - The archive thumb fetch no longer reads the `HTTP(S)_PROXY` environment: it now always connects to the address it has checked.

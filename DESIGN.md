@@ -389,7 +389,10 @@ mounted at an empty `QUARRY_HOME` that is seeded later (argus-halo restores the
 pool from tape after boot) is live from first request. `/ready` opens the pool
 and `503`s until it is serveable, which is the signal an orchestrator routes on.
 Folding readiness into `/health` made a data-less image permanently unhealthy
-and blocked the release smoke test (issue #10).
+and blocked the release smoke test (issue #10). `/health` is served by
+argus-cortex's `install_health` (the suite's `ServiceHealth` body, with
+`quarry_home` and `fetch_allowed` kept beside it) and is given no dependency
+checks and no readiness callback, so it stays pure liveness.
 
 This keeps us to one real UI (the demo) instead of maintaining a second.
 

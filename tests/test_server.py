@@ -101,14 +101,40 @@ def test_health(config, client):
     resp = client.get("/health")
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {
+    # The fields /health has always had, with the same names and meaning.
+    assert {k: body[k] for k in ("status", "service", "version", "quarry_home", "fetch_allowed")} == {
         "status": "ok",
         "service": "argus-quarry",
         "version": body["version"],
         "quarry_home": str(config.home.resolve()),
         "fetch_allowed": False,
     }
-    assert isinstance(body["version"], str) and body["version"]
+    from argus_quarry import __version__
+
+    assert body["version"] == __version__
+
+
+def test_health_is_the_suite_service_health(client):
+    """The body validates as cortex's ServiceHealth, with quarry's own fields beside it."""
+    from argus_cortex.service import ServiceHealth
+
+    body = client.get("/health").json()
+    health = ServiceHealth.model_validate(body)
+    assert (health.service, health.status, health.ready) == ("argus-quarry", "ok", True)
+    assert health.read_only is True  # no fetch route armed
+    assert health.checks == {} and health.wire == {}
+    assert health.peer is None and health.build is None
+    assert health.model_extra == {"quarry_home": body["quarry_home"], "fetch_allowed": False}
+    # The cheap form one service uses to probe another answers the same.
+    shallow = client.get("/health", params={"checks": "0"})
+    assert shallow.status_code == 200 and shallow.json()["status"] == "ok"
+
+
+def test_health_reports_an_armed_fetch_and_the_peer_label(config, seeded, monkeypatch):
+    monkeypatch.setenv("ARGUS_PEER", "quarry")  # what a compose file sets beside the argus.peer label
+    body = TestClient(create_app(home=config.home, allow_fetch=True)).get("/health").json()
+    assert body["fetch_allowed"] is True and body["read_only"] is False
+    assert body["peer"] == "quarry"
 
 
 def test_ready_reports_a_serveable_pool(client):
