@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -227,6 +228,40 @@ def test_an_interrupted_run_resumes_and_a_new_prompt_set_starts_over(cfg, monkey
     archive.build_era(prompts=_prompts("other-prompts"), chunk_rows=50)
     assert reads == [0, 50, 100, 150]  # parts from another prompt set are never mixed in
     assert ze.read_scores_meta(root, "pd12m")["prompts_sha256"] == "other-prompts"
+
+
+def test_changed_embeddings_discard_resumable_score_parts(cfg, monkeypatch):
+    """A rewritten embedding file must not reuse part files scored from the previous vectors."""
+    archive = get_archive("pd12m", cfg)
+
+    class Stop(Exception):
+        pass
+
+    def die_after_two(done, total):
+        if done >= 100:
+            raise Stop
+
+    with pytest.raises(Stop):
+        archive.build_era(prompts=_prompts(), chunk_rows=50, progress=die_after_two)
+    source = next((cfg.archive_dirs["pd12m"] / "embeddings" / "embeddings").glob("*.npy"))
+    os.utime(source, (2_000_000_000, 2_000_000_000))
+    reads: list[int] = []
+    real = sem._read_rows
+    monkeypatch.setattr(sem, "_read_rows", lambda s, st, lo, hi: reads.append(lo) or real(s, st, lo, hi))
+    archive.build_era(prompts=_prompts(), chunk_rows=50)
+    assert reads == [0, 50, 100, 150]
+
+
+def test_an_empty_embedding_matrix_publishes_an_empty_scores_file(tmp_path):
+    path = tmp_path / "empty.npy"
+    np.save(path, np.zeros((0, DIM), np.float32))
+    try:
+        built = ze.build_scores([path], tmp_path, "empty", expected_rows=0, prompts=_prompts(), chunk_rows=32)
+    except Exception as exc:
+        pytest.fail(f"empty archive did not publish scores: {exc}")
+    assert built["rows"] == 0 and built["total"] == 0
+    assert not (tmp_path / ".empty.era.parts").exists()
+    assert ze.read_scores_meta(tmp_path, "empty")["rows"] == 0
 
 
 def test_a_sample_run_leaves_the_rest_unscored(cfg):

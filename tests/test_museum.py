@@ -184,6 +184,40 @@ def test_compile_keeps_public_domain_images_once_each(tmp_path):
     assert not [p for p in index.iterdir() if p.name.endswith(".tmp")]
 
 
+def test_compile_keeps_the_lower_objects_null_fields(tmp_path):
+    """A null date on the winning object stays null; it is not filled from a higher id."""
+    shared = "https://images.metmuseum.org/shared.jpg"
+    index = tmp_path / "idx"
+    _harvested(
+        index,
+        [
+            _met(1, additionalImages=[shared], objectDate="", objectBeginDate=0, objectEndDate=0, objectURL=""),
+            _met(2, additionalImages=[shared], objectDate="1900", objectBeginDate=1900, objectEndDate=1900),
+        ],
+    )
+    mu.compile_table(index, "pd12m")
+    row = (
+        duckdb.connect()
+        .execute(
+            "SELECT museum_object_id, museum_date, museum_year_begin, museum_object_url "
+            "FROM read_parquet(?) WHERE image_uuid = ?",
+            [str(mu.museum_path(index, "pd12m")), mu.image_uuid(shared)],
+        )
+        .fetchone()
+    )
+    assert row == ("1", None, None, None)
+
+
+def test_compile_quotes_a_path_that_contains_a_quote(tmp_path):
+    index = tmp_path / "o'brien"
+    _harvested(index, [_met(1)])
+    try:
+        result = mu.compile_table(index, "pd12m")
+    except Exception as exc:
+        pytest.fail(f"compile_table rejected a path containing a quote: {exc}")
+    assert result["images"] == 1
+
+
 def _pd12m(tmp_path: Path, urls: list[str]) -> Path:
     """A PD12M archive (one parquet, no embeddings) whose S3 copies are named as PD12M names them."""
     root = tmp_path / "pd12m"

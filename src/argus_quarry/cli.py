@@ -515,7 +515,13 @@ def archives_era(
 def archives_museum(
     name: str = typer.Argument("pd12m", help="Archive to match museum objects onto (PD12M)"),
     limit: int | None = Option(None, "--limit", min=1, help="Ask for at most N more objects this run (a sample)"),
-    rate: float = Option(1.0, "--rate", min=0.1, max=80, help="Requests per second to the museum API"),
+    rate: float | None = Option(
+        None,
+        "--rate",
+        min=0.1,
+        max=80,
+        help="Requests per second to the museum API (overrides a configured Met rate; otherwise 1/s)",
+    ),
     block_wait: float = Option(
         300, "--block-wait", min=0, help="Seconds to pause when the Met's firewall refuses us, then resume (0 = stop)"
     ),
@@ -540,7 +546,14 @@ def archives_museum(
     from argus_quarry.net import NetClient
 
     config = QuarryConfig.from_env()
-    config.rates.setdefault(mu.MET_RATE_SOURCE, SourceRate(rate_per_sec=rate, burst=max(1, int(rate))))
+    if rate is not None:
+        # An explicit --rate wins over a rate already configured for the Met. setdefault would
+        # keep the configured one and drop the flag with no message.
+        config.rates[mu.MET_RATE_SOURCE] = SourceRate(rate_per_sec=rate, burst=max(1, int(rate)))
+    else:
+        config.rates.setdefault(
+            mu.MET_RATE_SOURCE, SourceRate(rate_per_sec=mu.DEFAULT_RATE, burst=max(1, int(mu.DEFAULT_RATE)))
+        )
     with _archive_errors():
         archive = get_archive(name, config)
         if mu.MET not in archive.museums:

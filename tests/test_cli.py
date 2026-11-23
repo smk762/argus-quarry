@@ -74,3 +74,21 @@ def test_verify_fails_and_repair_marks_a_sha_mismatch(tmp_path, monkeypatch):
     assert runner.invoke(app, ["verify", "--repair"]).exit_code == 0
     with ProvenanceStore(cfg.db_path) as store:
         assert store.get_by_remote_url(url).status == "failed"
+
+
+def test_museum_rate_flag_overrides_a_configured_rate(tmp_path, monkeypatch):
+    from argus_quarry.archives import museum as mu
+    from argus_quarry.config import QuarryConfig, SourceRate
+
+    cfg = QuarryConfig(home=tmp_path / "q")
+    cfg.rates[mu.MET_RATE_SOURCE] = SourceRate(rate_per_sec=8, burst=8)
+    monkeypatch.setattr(QuarryConfig, "from_env", staticmethod(lambda: cfg))
+
+    def stop(*_a, **_k):
+        raise LookupError("stopped before harvest")
+
+    monkeypatch.setattr("argus_quarry.archives.get_archive", stop)
+    kept = runner.invoke(app, ["archives", "museum", "pd12m"])
+    assert kept.exit_code == 2 and cfg.rates[mu.MET_RATE_SOURCE].rate_per_sec == 8
+    overridden = runner.invoke(app, ["archives", "museum", "pd12m", "--rate", "0.5"])
+    assert overridden.exit_code == 2 and cfg.rates[mu.MET_RATE_SOURCE].rate_per_sec == 0.5

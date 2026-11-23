@@ -239,11 +239,18 @@ def build_vector_index(
         # archive must not delete the directory the pointer has just been flipped to.
         with open(out_root / f".{name}.semantic.lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            # Durability before the pointer moves: a crash must not leave the pointer
+            # naming a directory whose bytes never reached disk, after the last good
+            # build has already been deleted.
+            _fsync_tree(building)
             building.rename(final)
             pointer = pointer_path(out_root, name)
             tmp = pointer.with_name(f".{pointer.name}.{token}")
             tmp.write_text(json.dumps(meta, indent=2))
+            _fsync_file(tmp)
             os.replace(tmp, pointer)
+            _fsync_file(pointer)
+            _fsync_dir(out_root)
             done = True
             # Older builds are unreachable now. A server that still maps one keeps its open
             # files until it reloads (POSIX unlink semantics), so this is safe to do live.
@@ -261,6 +268,30 @@ def build_vector_index(
 
 
 # ── read ─────────────────────────────────────────────────────────────────
+def _fsync_file(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_tree(directory: Path) -> None:
+    """fsync every file in ``directory``, then the directory entry itself."""
+    for child in directory.iterdir():
+        if child.is_file():
+            _fsync_file(child)
+    _fsync_dir(directory)
+
+
 def pointer_path(root: Path, name: str) -> Path:
     return root / f"{name}.semantic.json"
 

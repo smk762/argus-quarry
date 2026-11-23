@@ -58,25 +58,48 @@ def fit_breakpoints(samples: Sequence[Sample], *, bin_size: int = 9) -> list[Sam
     Sorted by id, consecutive runs of ``bin_size`` samples collapse to their median id and
     median time, so one photo whose owner edited its posted date can't drag a breakpoint.
     The times are then made non-decreasing (ids only grow with upload time). The first and
-    last samples are kept as the ends, so the table covers the full measured id range.
+    last ids are kept as the ends, so the table covers the full measured id range, but a raw
+    end's time is not trusted: it is pinned to the neighbouring bin median, so a backdated
+    first sample cannot pull every id below that median toward an earlier year. Each id
+    appears once.
     """
-    pts = sorted(set(samples))
+    pts = _one_time_per_id(samples)
     if len(pts) < 2:
         raise ValueError("need at least two samples to fit breakpoints")
     step = max(1, bin_size)
     bins = [pts[i : i + step] for i in range(0, len(pts), step)]
-    out: list[Sample] = [pts[0]]
-    for chunk in bins:
-        out.append((int(statistics.median(p[0] for p in chunk)), int(statistics.median(p[1] for p in chunk))))
-    out.append(pts[-1])
-    out = sorted(set(out))
-    # Ends are single samples: clamp them into the run of medians so an outlier end can't bend the curve.
-    out[0] = (out[0][0], min(out[0][1], out[1][1]))
-    out[-1] = (out[-1][0], max(out[-1][1], out[-2][1]))
+    medians: list[Sample] = [
+        (int(statistics.median(p[0] for p in chunk)), int(statistics.median(p[1] for p in chunk))) for chunk in bins
+    ]
+    # A truncated median id can land on an end id. Keep the median time, not the raw sample.
+    by_id: dict[int, int] = {}
+    for pid, posted in medians:
+        by_id.setdefault(pid, posted)
+    median_ids = set(by_id)
+    start_id, start_t = pts[0]
+    end_id, end_t = pts[-1]
+    if start_id not in by_id:
+        by_id[start_id] = start_t
+    if end_id not in by_id:
+        by_id[end_id] = end_t
+    out = sorted(by_id.items())
+    # Pin a raw end to the neighbouring median. An end that is itself a median already holds that time.
+    if len(out) >= 2 and out[0][0] not in median_ids:
+        out[0] = (out[0][0], out[1][1])
+    if len(out) >= 2 and out[-1][0] not in median_ids:
+        out[-1] = (out[-1][0], out[-2][1])
     fixed: list[Sample] = []
     for pid, t in out:
         fixed.append((pid, max(t, fixed[-1][1]) if fixed else t))
     return fixed
+
+
+def _one_time_per_id(samples: Sequence[Sample]) -> list[Sample]:
+    """One posted time per photo id (the median when the same id was sampled more than once)."""
+    by_id: dict[int, list[int]] = {}
+    for pid, posted in samples:
+        by_id.setdefault(int(pid), []).append(int(posted))
+    return [(pid, int(statistics.median(times))) for pid, times in sorted(by_id.items())]
 
 
 def posted_at(points: Sequence[Sample], photo_id: int) -> float | None:

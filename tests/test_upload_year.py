@@ -35,6 +35,23 @@ def test_a_backdated_photo_cannot_bend_the_table():
     assert uy.upload_year(points, 3050) == uy.upload_year(uy.fit_breakpoints(samples, bin_size=9), 3050)
 
 
+def test_a_backdated_first_sample_does_not_bend_the_low_end():
+    samples = [(i * 100, _t(2010) + i * 86400 * 30) for i in range(1, 40)]
+    points = uy.fit_breakpoints([(0, _t(1990)), *samples], bin_size=5)
+    assert points[0][0] == 0  # the end id still bounds the measured range
+    assert points[0][1] == points[1][1]  # its time is the first bin's median, not the backdated sample
+    assert uy.upload_year(points, 0) >= 2010
+
+
+def test_breakpoints_have_one_time_per_id():
+    # The same photo twice, and bin_size=2 so a truncated median id lands on an existing id.
+    samples = [(1, _t(2005)), (1, _t(2010)), (2, _t(2006)), (3, _t(2007)), (4, _t(2008))]
+    points = uy.fit_breakpoints(samples, bin_size=2)
+    ids = [pid for pid, _ in points]
+    assert ids == sorted(ids) and len(ids) == len(set(ids))
+    assert uy.year_thresholds(points)  # a repeated id used to be a zero-width segment
+
+
 def test_an_outlier_at_either_end_is_clamped_into_the_curve():
     samples = [(i * 100, _t(2010) + i * 86400 * 30) for i in range(1, 40)]
     points = uy.fit_breakpoints([(0, _t(2030)), *samples, (10_000, _t(2001))], bin_size=5)
