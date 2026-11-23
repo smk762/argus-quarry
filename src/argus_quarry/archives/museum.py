@@ -301,25 +301,33 @@ def compile_table(index_dir: Path, archive: str) -> dict[str, int]:
             COPY (
                 SELECT image_uuid,
                        '{MET}' AS museum,
-                       arg_min(CAST(id AS VARCHAR), id) AS museum_object_id,
-                       arg_min(url, id) AS museum_object_url,
-                       arg_min(date, id) AS museum_date,
-                       CAST(arg_min("begin", id) AS INTEGER) AS museum_year_begin,
-                       CAST(arg_min("end", id) AS INTEGER) AS museum_year_end
+                       obj.id AS museum_object_id,
+                       obj.url AS museum_object_url,
+                       obj.date AS museum_date,
+                       CAST(obj.begin AS INTEGER) AS museum_year_begin,
+                       CAST(obj.end AS INTEGER) AS museum_year_end
                 FROM (
-                    SELECT id, url, date, "begin", "end", unnest(uuids) AS image_uuid
-                    FROM read_json(?, format = 'newline_delimited',
-                                   columns = {{'id': 'BIGINT', 'pd': 'BOOLEAN', 'uuids': 'VARCHAR[]', 'date': 'VARCHAR',
-                                              'begin': 'BIGINT', 'end': 'BIGINT', 'url': 'VARCHAR'}})
-                    WHERE pd AND uuids IS NOT NULL
+                    -- One struct per image: arg_min skips a NULL argument, so separate arg_min
+                    -- calls would fill a null date from a higher id while the id stayed the lowest.
+                    SELECT image_uuid,
+                           arg_min({{'id': CAST(id AS VARCHAR), 'url': url, 'date': date,
+                                    'begin': "begin", 'end': "end"}}, id) AS obj
+                    FROM (
+                        SELECT id, url, date, "begin", "end", unnest(uuids) AS image_uuid
+                        FROM read_json(?, format = 'newline_delimited',
+                                       columns = {{'id': 'BIGINT', 'pd': 'BOOLEAN', 'uuids': 'VARCHAR[]',
+                                                  'date': 'VARCHAR', 'begin': 'BIGINT', 'end': 'BIGINT',
+                                                  'url': 'VARCHAR'}})
+                        WHERE pd AND uuids IS NOT NULL
+                    )
+                    GROUP BY image_uuid
                 )
-                GROUP BY image_uuid
-            ) TO '{tmp}' (FORMAT parquet)
+            ) TO '{str(tmp).replace("'", "''")}' (FORMAT parquet)
             """,
             [str(src)],
         )
         images, objects = con.execute(
-            f"SELECT count(*), count(DISTINCT museum_object_id) FROM read_parquet('{tmp}')"
+            "SELECT count(*), count(DISTINCT museum_object_id) FROM read_parquet(?)", [str(tmp)]
         ).fetchone()
     except BaseException:
         tmp.unlink(missing_ok=True)

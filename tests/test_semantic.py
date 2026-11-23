@@ -346,6 +346,33 @@ def test_build_cleanup_keeps_the_build_a_concurrent_publish_pointed_at(built, mo
     assert sem.read_pointer(root, "pd12m")["dir"] == other.name
 
 
+def test_index_files_are_durable_before_older_builds_are_deleted(tmp_path, monkeypatch):
+    import os
+    import shutil
+
+    path = tmp_path / "v.npy"
+    np.save(path, np.eye(4, dtype=np.float32))
+    out = tmp_path / "out"
+    sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    events: list[object] = []
+    real_fsync, real_rmtree = os.fsync, shutil.rmtree
+
+    def spy_fsync(fd):
+        events.append("fsync")
+        return real_fsync(fd)
+
+    def spy_rmtree(target, *a, **k):
+        events.append(("rmtree", Path(target).name))
+        return real_rmtree(target, *a, **k)
+
+    monkeypatch.setattr(os, "fsync", spy_fsync)
+    monkeypatch.setattr(shutil, "rmtree", spy_rmtree)
+    sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    assert "fsync" in events
+    removed = next(i for i, event in enumerate(events) if isinstance(event, tuple))
+    assert events.index("fsync") < removed
+
+
 # ── server ───────────────────────────────────────────────────────────────
 pytest.importorskip("fastapi", reason="server extra not installed")
 from fastapi.testclient import TestClient  # noqa: E402

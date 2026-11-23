@@ -68,7 +68,8 @@ class Rows:
         for f in np.unique(which):
             sel = which == f
             out[sel] = self.mats[f][positions[sel] - self.starts[f]]
-        out /= np.linalg.norm(out, axis=1, keepdims=True)
+        # A zero row is a missing embedding, not a direction. Dividing by its norm would be NaN.
+        out /= np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-12)
         return out
 
 

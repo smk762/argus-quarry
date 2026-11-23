@@ -256,6 +256,44 @@ def test_open_readable_prefers_mode_ro_and_sees_a_live_writer(config):
             assert reader.stats()["subjects"] == 2
 
 
+def test_open_readable_does_not_fall_back_to_immutable_on_a_writable_pool(config, monkeypatch):
+    """A transient mode=ro failure on a live pool must not open immutable=1."""
+    with ProvenanceStore(config.db_path) as store:
+        store.upsert_subject(Subject(name="Albert Einstein"))
+
+    real_init = ProvenanceStore.__init__
+    calls: list[bool] = []
+
+    def wrapped(self, db_path, *, read_only=False, immutable=False):
+        calls.append(immutable)
+        if read_only and not immutable:
+            raise sqlite3.OperationalError("database is locked")
+        return real_init(self, db_path, read_only=read_only, immutable=immutable)
+
+    monkeypatch.setattr(ProvenanceStore, "__init__", wrapped)
+    opened = None
+    try:
+        opened = ProvenanceStore.open_readable(config.db_path)
+    except ProvenanceUnavailable:
+        opened = None
+    else:
+        opened.close()
+    assert opened is None
+    assert True not in calls
+
+
+def test_iter_photographs_applies_offset_when_limit_is_omitted(config):
+    with ProvenanceStore(config.db_path) as store:
+        pid = store.upsert_subject(Subject(name="Albert Einstein"))
+        ids = [store.insert_pending(_photo(pid, f"https://img/{i}.jpg")) for i in range(3)]
+        for photo_id in ids:
+            store.set_status(photo_id, "complete")
+        all_rows = store.iter_photographs()
+        skipped = store.iter_photographs(offset=2)
+    assert [p.id for p in skipped] == [p.id for p in all_rows][2:]
+    assert len(skipped) == 1
+
+
 def test_open_readable_uses_immutable_on_a_read_only_mount(config, read_only_dir):
     with ProvenanceStore(config.db_path) as store:
         store.upsert_subject(Subject(name="Albert Einstein"))

@@ -10,6 +10,7 @@ writer plus safe concurrent readers.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -168,9 +169,12 @@ class ProvenanceStore:
         pool.
 
         Tries ``mode=ro`` first because it sees a concurrent ``fetch``'s WAL.
-        Only if that fails (a read-only *directory*, where the ``-shm`` cannot be
-        created) does it use ``immutable=1`` — and never while a non-empty
-        ``-wal`` exists, since immutable would silently serve the pre-WAL file.
+        Only if that fails *and* the directory is not writable (a read-only mount,
+        where the ``-shm`` cannot be created) does it use ``immutable=1`` — and
+        never while a non-empty ``-wal`` exists, since immutable would silently
+        serve the pre-WAL file. A writable pool that fails ``mode=ro`` (locked,
+        busy) is not opened immutable: the writer is still changing the file, and
+        immutable skips locking.
 
         Raises ``FileNotFoundError`` if there is no DB, or
         :class:`ProvenanceUnavailable` if one exists but cannot be read safely.
@@ -182,6 +186,12 @@ class ProvenanceStore:
             raise
         except (OSError, sqlite3.Error) as exc:
             ro_error: Exception = exc
+
+        if os.access(path.parent, os.W_OK):
+            raise ProvenanceUnavailable(
+                f"cannot open provenance database at {path} read-only ({ro_error}); "
+                "the directory is writable, so this is not a read-only mount"
+            ) from ro_error
 
         if has_wal_content(path):
             raise ProvenanceUnavailable(
@@ -545,9 +555,10 @@ class ProvenanceStore:
             status=status, source=source, licences=licences, subject=subject, category=category
         )
         q = self._PHOTO_SELECT + where + " ORDER BY ph.category, sub.name, ph.id"
-        if limit is not None:
+        if limit is not None or offset:
+            # SQLite treats a negative LIMIT as unbounded, so an offset without a limit still applies.
             q += " LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
+            params.extend([-1 if limit is None else limit, offset])
         return [self._row_to_photo(r) for r in self._conn.execute(q, params) if r is not None]
 
     def count_photographs(

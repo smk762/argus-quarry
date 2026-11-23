@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import traceback
 
 import httpx
 import pytest
@@ -98,7 +99,11 @@ def test_the_api_key_never_reaches_an_error_message(tmp_path):
         with pytest.raises(FlickrDateError) as info:
             dates.upload_date(222, "x")
         assert KEY not in str(info.value)
-        assert info.value.__cause__ is None  # no chained httpx error carrying the request URL (and its key)
+        assert info.value.__cause__ is None
+        # `raise ...` inside `except httpx.HTTPError` sets __context__ even when __cause__ stays None.
+        # from None suppresses it; the rendered chain is what a log line would show.
+        assert info.value.__context__ is None or info.value.__suppress_context__
+        assert KEY not in "".join(traceback.format_exception(info.value))
 
 
 def test_the_key_comes_from_the_environment_and_never_shows_in_a_repr(monkeypatch, tmp_path):

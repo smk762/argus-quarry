@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         bin_size = int(args.bin_size)
     points = uy.fit_breakpoints(fit, bin_size=bin_size)
     error = uy.measure(points, held_out)
-    vias = {r.get("via") for r in answers.values() if "posted" in r}
+    vias = {r.get("via") for r in answers.values() if "posted" in r and r["id"] in wanted}
     table = {
         "schema": uy.BREAKPOINTS_SCHEMA,
         "what": "Flickr photo id -> UPLOAD time (dates.posted / datePosted), never the capture date",

@@ -370,8 +370,8 @@ def build_scores(
     Memory is one chunk, never the matrix: each chunk is read with plain file I/O (as the
     vector-index build does), scored, written as a small part file and freed. Part files
     survive an interruption under ``.<name>.era.parts/``, so a rerun with the same prompt
-    set resumes where it stopped. ``limit_rows`` scores only the first rows (a sample run);
-    rows past it stay unscored (NULL) in the index.
+    set and the same embedding files resumes where it stopped. ``limit_rows`` scores only
+    the first rows (a sample run); rows past it stay unscored (NULL) in the index.
     """
     from argus_quarry.archives import semantic as sem  # the shared chunked .npy reader
 
@@ -394,10 +394,13 @@ def build_scores(
     out_root.mkdir(parents=True, exist_ok=True)
     parts = out_root / f".{name}.era.parts"
     stamp = parts / "prompts.sha256"
-    if parts.is_dir() and (not stamp.is_file() or stamp.read_text().strip() != (prompts.sha256 or "")):
-        shutil.rmtree(parts)  # parts from another prompt set: never mix them
+    # Prompts alone are not enough: parts hold scores of these exact vectors. A regenerated
+    # embedding file (new model export, same row count and prompts) must not be mixed in.
+    identity = _resume_stamp(sources, prompts, dim=dim, chunk_rows=chunk_rows)
+    if parts.is_dir() and (not stamp.is_file() or stamp.read_text().strip() != identity):
+        shutil.rmtree(parts)
     parts.mkdir(exist_ok=True)
-    stamp.write_text(prompts.sha256 or "")
+    stamp.write_text(identity)
     con = duckdb.connect()
     try:
         for lo in range(0, stop, chunk_rows):
@@ -428,17 +431,45 @@ def build_scores(
         kv_sql = ", ".join(f"'{k}': '{_sql(v)}'" for k, v in kv.items())
         final = scores_path(out_root, name)
         tmp = final.with_name(f".{final.name}.building")
-        wanted = [parts / f"{lo:012d}-{min(stop, lo + chunk_rows):012d}.parquet" for lo in range(0, stop, chunk_rows)]
-        files = "[" + ", ".join(f"'{_sql(p)}'" for p in wanted) + "]"
-        con.execute(
-            f"COPY (SELECT * FROM read_parquet({files}) ORDER BY pos) TO '{_sql(tmp)}' "
-            f"(FORMAT parquet, KV_METADATA {{{kv_sql}}})"
-        )
+        if stop == 0:
+            # read_parquet([]) is an error; an empty matrix still publishes a scored file.
+            con.execute(
+                f"""
+                COPY (
+                    SELECT CAST(NULL AS BIGINT) AS pos, CAST(NULL AS UTINYINT) AS era,
+                           CAST(NULL AS FLOAT) AS era_conf, CAST(NULL AS UTINYINT) AS kind,
+                           CAST(NULL AS FLOAT) AS kind_conf
+                    WHERE false
+                ) TO '{_sql(tmp)}' (FORMAT parquet, KV_METADATA {{{kv_sql}}})
+                """
+            )
+        else:
+            wanted = [
+                parts / f"{lo:012d}-{min(stop, lo + chunk_rows):012d}.parquet" for lo in range(0, stop, chunk_rows)
+            ]
+            files = "[" + ", ".join(f"'{_sql(p)}'" for p in wanted) + "]"
+            con.execute(
+                f"COPY (SELECT * FROM read_parquet({files}) ORDER BY pos) TO '{_sql(tmp)}' "
+                f"(FORMAT parquet, KV_METADATA {{{kv_sql}}})"
+            )
         os.replace(tmp, final)
     finally:
         con.close()
     shutil.rmtree(parts, ignore_errors=True)
     return {"rows": stop, "total": total, "prompts_sha256": prompts.sha256, "built_at": built_at}
+
+
+def _resume_stamp(sources: Sequence[Path], prompts: PromptSet, *, dim: int, chunk_rows: int) -> str:
+    """Fingerprint of one scoring run: prompts, chunk geometry, and each embedding file's size and mtime.
+
+    Part files are reusable only when this matches. Size and mtime stand in for a content hash, so a
+    file rewritten in place (same row count) still discards scores computed from the old vectors.
+    """
+    lines = [prompts.sha256 or "", f"dim={dim}", f"chunk_rows={chunk_rows}"]
+    for path in sources:
+        st = path.stat()
+        lines.append(f"{path.resolve()}:{st.st_size}:{st.st_mtime_ns}")
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 
 def _sql(value: object) -> str:

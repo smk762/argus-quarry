@@ -98,10 +98,10 @@ def colourful(path: Path) -> tuple[bool, float]:
 
 
 def thumbnail(src: Path, dest: Path) -> None:
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     with Image.open(src) as im:
-        im.draft("RGB", (THUMB_LONG_SIDE, THUMB_LONG_SIDE))
+        im = ImageOps.exif_transpose(im)
         im = im.convert("RGB")
         im.thumbnail((THUMB_LONG_SIDE, THUMB_LONG_SIDE))
         im.save(dest, "JPEG", quality=88, optimize=True)
@@ -134,13 +134,16 @@ def cmd_sample(args: argparse.Namespace) -> int:
                         rejected["greyscale"] += 1
                         continue
                     thumbnail(src, thumb)
-                    src.unlink(missing_ok=True)
                 else:
                     sat = colourful(thumb)[1]
             except Exception as exc:  # a dead link or an undecodable file: draw the next candidate
                 print(f"  {c['id']}: {exc}", file=sys.stderr)
                 rejected["unreadable"] += 1
                 continue
+            finally:
+                # Every exit after the download: a rejected or unreadable original must not stay
+                # behind, or the next run reopens it and never fetches a replacement.
+                src.unlink(missing_ok=True)
             kept[stratum].append({**c, "saturation": sat})
             print(f"  {stratum}: {len(kept[stratum])}", file=sys.stderr) if len(kept[stratum]) % 10 == 0 else None
     short = {s: QUOTA[s.split("|")[0]] - len(v) for s, v in kept.items() if len(v) < QUOTA[s.split("|")[0]]}
@@ -311,6 +314,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     sample = json.loads(args.sample.read_text())
     labels = json.loads(args.labels.read_text())
     labels = labels.get("labels", labels)
+    ref_labels = labels  # agreement is between raters, never against the synthetic fill-in below
     if args.worst_case:  # every item the reference doesn't cover counted against precision
         labels = {**{it["id"]: "film" for it in sample["items"]}, **labels}
     unknown = sorted(set(labels.values()) - {"digital", "film", "unsure"})
@@ -319,7 +323,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     out = report(sample, labels)
     for path in args.compare or []:
         rater = json.loads(path.read_text())
-        out.setdefault("agreement", {})[path.name] = agreement(labels, rater.get("labels", rater))
+        out.setdefault("agreement", {})[path.name] = agreement(ref_labels, rater.get("labels", rater))
     print(json.dumps(out, indent=2))
     return 0
 

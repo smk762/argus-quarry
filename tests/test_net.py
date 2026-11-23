@@ -225,11 +225,14 @@ def test_get_json_never_retries_a_permanent_client_error(tmp_path):
 
 
 def test_get_json_still_retries_a_transient_status(tmp_path):
-    statuses = iter([503, 200])
+    calls: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        status = next(statuses)
-        return httpx.Response(status, json={"ok": True})
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(503, json={"error": "unavailable"})
+        return httpx.Response(200, json={"ok": True})
 
     with _mock_net(tmp_path, handler) as net:
         assert net.get_json("https://api.test/x") == {"ok": True}
+    assert len(calls) == 2  # the 503 body is not a successful answer

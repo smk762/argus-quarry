@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,15 @@ def test_the_committed_sample_is_blind_balanced_and_iNaturalist_free():
     sample = json.loads(path.read_text())
     assert all(it["collection"] != "iNaturalist" for it in sample["items"])
     assert len({it["id"] for it in sample["items"]}) == len(sample["items"]) >= 280
+    # Each (era, band) stratum fills its quota, minus a recorded shortfall. A sample that is
+    # entirely one band would still pass the checks above.
+    counts = Counter(f"{it['clip_era']}|{it['band']}" for it in sample["items"])
+    quota, short = sample["quota"], sample.get("short") or {}
+    expected = {f"{era}|{band}" for era in quota for band, _, _ in fds.BANDS}
+    assert set(counts) == expected
+    for stratum in expected:
+        era = stratum.split("|", 1)[0]
+        assert counts[stratum] == quota[era] - short.get(stratum, 0)
     template = (ROOT / "scripts" / "film_digital_labeller.template.html").read_text()
     assert "clip_era" not in template and "conf" not in template.lower().replace(
         "confidence", ""
@@ -134,3 +144,91 @@ def test_worst_case_counts_uncovered_items_as_film(tmp_path):
     with contextlib.redirect_stdout(buf):
         fds.cmd_report(args)
     assert json.loads(buf.getvalue())["precision_2000_now"]["conf>=0.7"]["digital_share"] == 0.5
+
+
+def test_rejected_and_failed_originals_are_deleted(tmp_path, monkeypatch):
+    """A greyscale reject and an unreadable file must not leave the downloaded original on disk."""
+    from PIL import Image
+
+    grey = tmp_path / "grey.jpg"
+    Image.new("RGB", (8, 8), (40, 40, 40)).save(grey)
+    bad = tmp_path / "bad.bin"
+    bad.write_bytes(b"not an image")
+    blobs = {"https://x/grey": grey.read_bytes(), "https://x/bad": bad.read_bytes()}
+    candidates = [
+        {"id": "grey", "url": "https://x/grey", "clip_era": "2000-now", "band": "ge0.7", "collection": "c"},
+        {"id": "bad", "url": "https://x/bad", "clip_era": "2000-now", "band": "ge0.7", "collection": "c"},
+    ]
+    monkeypatch.setattr(fds, "draw", lambda *_a, **_k: (candidates, {"2000-now|ge0.7": 10}))
+
+    class _Count:
+        def fetchone(self):
+            return (0,)
+
+    monkeypatch.setattr(fds.duckdb, "execute", lambda *_a, **_k: _Count())
+
+    class _Net:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return None
+
+        def download(self, url, dest, **_k):
+            dest.write_bytes(blobs[url])
+
+    monkeypatch.setattr("argus_quarry.net.NetClient", lambda _config: _Net())
+    monkeypatch.setenv("QUARRY_HOME", str(tmp_path / "q"))
+    thumbs = tmp_path / "thumbs"
+    out = tmp_path / "sample.json"
+    args = type(
+        "A", (), {"index": tmp_path / "idx", "scores": tmp_path / "s.parquet", "seed": 1, "thumbs": thumbs, "out": out}
+    )
+    fds.cmd_sample(args)
+    originals = thumbs / "originals"
+    assert not (originals / "grey.img").exists()
+    assert not (originals / "bad.img").exists()
+    assert json.loads(out.read_text())["rejected"] == {"greyscale": 1, "unreadable": 1}
+
+
+def test_thumbnails_apply_exif_orientation(tmp_path):
+    from PIL import Image
+
+    src = tmp_path / "sideways.jpg"
+    dest = tmp_path / "thumb.jpg"
+    im = Image.new("RGB", (40, 20), (180, 20, 20))
+    exif = Image.Exif()
+    exif[0x0112] = 6  # the stored pixels are rotated; display is the transpose
+    im.save(src, exif=exif)
+    fds.thumbnail(src, dest)
+    with Image.open(dest) as out:
+        assert out.size[1] > out.size[0]
+
+
+def test_worst_case_agreement_uses_the_real_reference_labels(tmp_path):
+    """--worst-case fills uncovered items as film for precision only, not for rater agreement."""
+    import contextlib
+    import io
+
+    sample = _sample({"2000-now|ge0.7": 2}, {"2000-now|ge0.7": 10})
+    (tmp_path / "s.json").write_text(json.dumps(sample))
+    (tmp_path / "ref.json").write_text(json.dumps({"labels": {"2000-now|ge0.7#0": "digital"}}))
+    other = tmp_path / "rater.json"
+    other.write_text(json.dumps({"labels": {"2000-now|ge0.7#0": "digital", "2000-now|ge0.7#1": "digital"}}))
+    args = type(
+        "A",
+        (),
+        {
+            "sample": tmp_path / "s.json",
+            "labels": tmp_path / "ref.json",
+            "worst_case": True,
+            "compare": [other],
+        },
+    )
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        fds.cmd_report(args)
+    got = json.loads(buf.getvalue())
+    assert got["precision_2000_now"]["conf>=0.7"]["digital_share"] == 0.5  # the uncovered item counted as film
+    agreement = got["agreement"]["rater.json"]
+    assert agreement["compared"] == 1 and agreement["agree"] == 1  # item #1 was never a reference label

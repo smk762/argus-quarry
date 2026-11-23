@@ -21,10 +21,17 @@ DIGITAL, SCAN = "digital", "scan"
 
 
 def exif_text(value: object) -> str:
-    """An EXIF string value as clean text: bytes decoded, padding and NULs stripped."""
+    """An EXIF string value as clean text.
+
+    ASCII tags often carry UTF-8 (or, failing that, Latin-1). The value is NUL-terminated, so
+    everything after the first NUL is padding and is discarded before the surrounding whitespace.
+    """
     if isinstance(value, bytes):
-        value = value.decode("ascii", "replace")
-    return str(value).strip().strip("\x00").strip()
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            value = value.decode("latin-1")
+    return str(value).split("\x00", 1)[0].strip()
 
 
 def capture_medium(make: str | None, model: str | None) -> str | None:

@@ -26,6 +26,15 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 
 ### Fixed
 
+- Film/digital sampling deletes the downloaded original of a rejected or unreadable candidate, so the next run fetches a replacement. Thumbnails apply EXIF orientation. Inter-rater agreement is scored against the real reference labels.
+- Era scoring resumes only when the prompt set and the embedding files match, so a regenerated matrix cannot publish stale part scores. An empty embedding matrix publishes an empty scores file.
+- Museum compile keeps every field of the lowest-id object together, so a null date is not filled from a later object that shares the image. The output path is escaped before it is placed in SQL.
+- Flickr upload-year breakpoints keep one time per photo id and pin a backdated first sample to the neighbouring bin, so one early posted date cannot bend the low end of the curve.
+- `open_readable` refuses a writable pool after `mode=ro` fails, instead of falling back to `immutable=1` and skipping the WAL. `iter_photographs` applies `offset` when no limit is given.
+- A semantic index fsyncs the new build and the pointer before older builds are deleted.
+- `archives museum --rate` overrides a Met rate already set in config.
+- EXIF text keeps non-ASCII bytes (UTF-8, otherwise Latin-1) and drops NUL padding mixed with spaces.
+- Era calibration leaves a zero embedding at zero. Flickr upload calibration names its source from this run's sample only.
 - `export`: a re-export that fails part-way no longer deletes the provenance sidecar of a file an earlier run published. The file is staged under a temporary name and swapped in atomically, so the earlier file and its sidecar are left as they were. A second file with the same stem in one subject (`a.jpg` next to `a.tif`) is skipped instead of overwriting the first file's `<stem>.json` licence record.
 - Downloads and range reads now ask for `Accept-Encoding: identity`. If a server compresses a byte range anyway, the response is refused. An encoded full download is never resumed. Before this, decompressed byte counts were used as `Range` offsets, so the result could be spliced or miscounted.
 - The archive thumb fetch checks the address again when it connects, and connects to that same IP. A DNS-rebinding host can no longer pass the public-address check and then resolve to `127.0.0.1` or `169.254.169.254`.
