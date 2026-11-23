@@ -10,7 +10,7 @@ and the CLI command from ``GET /archives/{name}/slice``.
 
 Routes:
 
-    GET /health                          -> liveness (always 200 while up)
+    GET /health                          -> liveness (always 200 while up), cortex's ServiceHealth
     GET /ready                           -> readiness (503 until the pool is serveable)
     GET /stats
     GET /subjects?category=
@@ -58,6 +58,7 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError("Server requires: pip install argus-quarry[server]") from exc
 
 import structlog
+from argus_cortex.service import install_health
 from PIL import Image, UnidentifiedImageError
 from pydantic import ValidationError
 
@@ -228,24 +229,29 @@ def create_app(
     # ``QUARRY_HOME`` mount must not be able to stall the liveness probe.
     quarry_home = str(config.home.resolve())
 
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
-        """Liveness: the process is up and answering HTTP. Independent of the pool.
+    def _health_fields() -> dict[str, Any]:
+        """Quarry's own ``/health`` fields, beside cortex's ``ServiceHealth`` ones. Reads state only."""
+        return {"quarry_home": quarry_home, "fetch_allowed": config.allow_fetch}
 
-        Deliberately does NOT open the DB (nor touch the pool at request time).
-        A container mounted at an empty ``QUARRY_HOME`` that is seeded later
-        (argus-halo restores the pool from tape after boot) is *live* from the
-        first request; whether it has data to serve yet is :func:`ready`'s job.
-        Conflating the two here is what made an empty pool report unhealthy
-        forever and blocked the release smoke test (issue #10).
-        """
-        return {
-            "status": "ok",
-            "service": _SERVICE,
-            "version": __version__,
-            "quarry_home": quarry_home,
-            "fetch_allowed": config.allow_fetch,
-        }
+    # Liveness: the process is up and answering HTTP. Independent of the pool.
+    #
+    # Deliberately no dependency checks and no readiness callback, so the route never
+    # opens the DB (nor touches the pool at request time) and always answers
+    # ``200 {"status": "ok", ...}``. A container mounted at an empty ``QUARRY_HOME``
+    # that is seeded later (argus-halo restores the pool from tape after boot) is
+    # *live* from the first request; whether it has data to serve yet is ``/ready``'s
+    # job. Conflating the two here is what made an empty pool report unhealthy
+    # forever and blocked the release smoke test (issue #10).
+    #
+    # The body is the suite's ``ServiceHealth`` (argus-cortex 0.16) with quarry's own
+    # ``quarry_home`` and ``fetch_allowed`` kept beside it.
+    install_health(
+        app,
+        service=_SERVICE,
+        version=__version__,
+        read_only=not config.allow_fetch,
+        extra=_health_fields,
+    )
 
     @app.get("/ready")
     async def ready() -> Response:

@@ -81,8 +81,17 @@ class FakeNet:
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch):
     """Ambient settings from a developer shell or .env must not leak into tests."""
-    for var in ("QUARRY_ALLOW_FETCH", "QUARRY_PD12M_DIR", "QUARRY_MEGALITH_DIR", "QUARRY_MAX_FILE_MB"):
+    for var in (
+        "QUARRY_ALLOW_FETCH",
+        "QUARRY_PD12M_DIR",
+        "QUARRY_MEGALITH_DIR",
+        "QUARRY_MAX_FILE_MB",
+        "ARGUS_BUILD",
+        "ARGUS_PEER",
+    ):
         monkeypatch.delenv(var, raising=False)
+    # A developer's suite file (~/.config/argus/suite.env) is never read by a test.
+    monkeypatch.setenv("ARGUS_ENV_FILE", "off")
 
 
 @pytest.fixture
