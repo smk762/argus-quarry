@@ -562,6 +562,8 @@ uv run --no-sync python scripts/record_tape.py record --subjects docs/demo/subje
 uv run --no-sync python scripts/record_tape.py build
 ```
 
+`.github/workflows/pages.yml` deploys it to Cloudflare Pages from every `dev` commit that passes CI.
+
 ## Related projects
 
 - [**argus-studio**](https://github.com/smk762/argus-studio) — the suite's Next.js web UI (captioning + `/curate`).
