@@ -1,5 +1,5 @@
 // The Dragonhound Labs family bar, rendered natively from the vendored source (vendor/dh/dh-strip.mjs,
-// dh-shared 1.2.8): links, labels and mark come from there, so a re-sync updates it with no hand copy.
+// dh-shared 1.2.11): links, labels and mark come from there, so a re-sync updates it with no hand copy.
 // Styles are vendor/dh/dh-strip.css (imported by globals.css). No JS. src/lib/shared.test.ts checks the
 // rendered markup against the module's own stripHtml().
 //
