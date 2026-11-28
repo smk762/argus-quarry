@@ -274,6 +274,15 @@ def test_a_sample_run_leaves_the_rest_unscored(cfg):
     assert archive.count(ArchiveQuery(clip_eras=list(ze.ERAS))) == 40
 
 
+def test_a_zero_row_limit_scores_nothing_and_a_negative_one_is_refused(tmp_path):
+    path = tmp_path / "v.npy"
+    np.save(path, _vectors()[:64])
+    built = ze.build_scores([path], tmp_path, "tiny", expected_rows=64, prompts=_prompts(), chunk_rows=32, limit_rows=0)
+    assert built["rows"] == 0 and built["total"] == 64  # not a silent full pass
+    with pytest.raises(ValueError, match="limit_rows"):
+        ze.build_scores([path], tmp_path, "tiny", expected_rows=64, prompts=_prompts(), chunk_rows=32, limit_rows=-1)
+
+
 def test_scores_for_other_embeddings_are_never_joined(cfg, tmp_path):
     archive = get_archive("pd12m", cfg)
     other = tmp_path / "other.npy"

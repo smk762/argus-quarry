@@ -321,9 +321,13 @@ def cmd_report(args: argparse.Namespace) -> int:
     if unknown:
         raise SystemExit(f"unknown label value(s): {unknown}")
     out = report(sample, labels)
-    for path in args.compare or []:
+    compare = args.compare or []
+    names = [p.name for p in compare]
+    for path in compare:
         rater = json.loads(path.read_text())
-        out.setdefault("agreement", {})[path.name] = agreement(ref_labels, rater.get("labels", rater))
+        # Keyed by file name, or by the path as given when two raters' files share a name.
+        key = path.name if names.count(path.name) == 1 else str(path)
+        out.setdefault("agreement", {})[key] = agreement(ref_labels, rater.get("labels", rater))
     print(json.dumps(out, indent=2))
     return 0
 

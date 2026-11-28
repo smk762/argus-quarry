@@ -86,7 +86,9 @@ def test_the_committed_sample_is_blind_balanced_and_iNaturalist_free():
     counts = Counter(f"{it['clip_era']}|{it['band']}" for it in sample["items"])
     quota, short = sample["quota"], sample.get("short") or {}
     expected = {f"{era}|{band}" for era in quota for band, _, _ in fds.BANDS}
-    assert set(counts) == expected
+    # A subset: a stratum whose whole quota is a recorded shortfall has no items, so no key in counts.
+    # The loop below reads it as 0 and still holds it to its quota minus the shortfall.
+    assert set(counts) <= expected
     for stratum in expected:
         era = stratum.split("|", 1)[0]
         assert counts[stratum] == quota[era] - short.get(stratum, 0)
@@ -232,3 +234,29 @@ def test_worst_case_agreement_uses_the_real_reference_labels(tmp_path):
     assert got["precision_2000_now"]["conf>=0.7"]["digital_share"] == 0.5  # the uncovered item counted as film
     agreement = got["agreement"]["rater.json"]
     assert agreement["compared"] == 1 and agreement["agree"] == 1  # item #1 was never a reference label
+
+
+def test_raters_whose_files_share_a_name_are_both_reported(tmp_path):
+    """--compare raterA/labels.json raterB/labels.json: neither result may overwrite the other."""
+    import contextlib
+    import io
+
+    sample = _sample({"2000-now|ge0.7": 2}, {"2000-now|ge0.7": 10})
+    (tmp_path / "s.json").write_text(json.dumps(sample))
+    (tmp_path / "ref.json").write_text(json.dumps({"labels": {"2000-now|ge0.7#0": "digital"}}))
+    raters = []
+    for name, label in (("raterA", "digital"), ("raterB", "film")):
+        (tmp_path / name).mkdir()
+        raters.append(tmp_path / name / "labels.json")
+        raters[-1].write_text(json.dumps({"labels": {"2000-now|ge0.7#0": label}}))
+    args = type(
+        "A",
+        (),
+        {"sample": tmp_path / "s.json", "labels": tmp_path / "ref.json", "worst_case": False, "compare": raters},
+    )
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        fds.cmd_report(args)
+    agreement = json.loads(buf.getvalue())["agreement"]
+    assert set(agreement) == {str(raters[0]), str(raters[1])}
+    assert agreement[str(raters[0])]["agree"] == 1 and agreement[str(raters[1])]["agree"] == 0

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -144,6 +145,18 @@ def fetch(ids: list[tuple[int, str]], cache: Path, dates: FlickrDates) -> dict[i
     return done
 
 
+#: How each fetch path is named in the table's provenance.
+SOURCE_LABELS = {"api": "flickr.photos.getInfo dates.posted", "page": "Flickr photo pages (datePosted)"}
+
+
+def source_label(vias: Counter[str]) -> str:
+    """Every fetch path that dated a sample, API first: a mixed run names both, an empty one says so."""
+    if not vias:
+        return "nothing dated"
+    order = sorted(vias, key=lambda v: (list(SOURCE_LABELS).index(v) if v in SOURCE_LABELS else len(SOURCE_LABELS), v))
+    return " + ".join(SOURCE_LABELS.get(v, v) for v in order)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--links", required=True, help="Megalith links parquet glob (read-only)")
@@ -185,11 +198,12 @@ def main(argv: list[str] | None = None) -> int:
         bin_size = int(args.bin_size)
     points = uy.fit_breakpoints(fit, bin_size=bin_size)
     error = uy.measure(points, held_out)
-    vias = {r.get("via") for r in answers.values() if "posted" in r and r["id"] in wanted}
+    vias = Counter(str(r.get("via")) for r in answers.values() if "posted" in r and r["id"] in wanted)
     table = {
         "schema": uy.BREAKPOINTS_SCHEMA,
         "what": "Flickr photo id -> UPLOAD time (dates.posted / datePosted), never the capture date",
-        "source": "flickr.photos.getInfo dates.posted" if vias == {"api"} else "Flickr photo pages (datePosted)",
+        "source": source_label(vias),
+        "sources": dict(sorted(vias.items())),
         "sampled_from": "Megalith-10m photo ids: one per equal-count id stratum, both ends, and "
         f"{args.low_samples} log-spaced bands below the 5th-percentile id",
         "sampled_at": datetime.now(UTC).date().isoformat(),
