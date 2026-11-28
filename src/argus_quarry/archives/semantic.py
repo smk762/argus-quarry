@@ -201,6 +201,7 @@ def build_vector_index(
     final = out_root / f"{name}.semantic.{token}"
     building.mkdir()
     done = False
+    tmp: Path | None = None
     try:
         index = faiss.index_factory(dim, factory, faiss.METRIC_INNER_PRODUCT)
         if not index.is_trained:
@@ -249,9 +250,11 @@ def build_vector_index(
             tmp.write_text(json.dumps(meta, indent=2))
             _fsync_file(tmp)
             os.replace(tmp, pointer)
+            # The pointer names ``final`` from here on: a failure below must not delete it.
+            done = True
+            tmp = None
             _fsync_file(pointer)
             _fsync_dir(out_root)
-            done = True
             # Older builds are unreachable now. A server that still maps one keeps its open
             # files until it reloads (POSIX unlink semantics), so this is safe to do live.
             # Whatever the pointer names now is kept, even if it is not this build.
@@ -264,6 +267,8 @@ def build_vector_index(
         if not done:
             shutil.rmtree(building, ignore_errors=True)
             shutil.rmtree(final, ignore_errors=True)
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
     return meta
 
 

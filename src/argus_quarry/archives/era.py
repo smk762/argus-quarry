@@ -389,7 +389,9 @@ def build_scores(
     total = sum(sizes)
     if total != expected_rows:
         raise EraUnavailable(f"{name}: embeddings have {total:,} rows but the metadata has {expected_rows:,}")
-    stop = min(total, limit_rows) if limit_rows else total
+    if limit_rows is not None and limit_rows < 0:
+        raise ValueError(f"limit_rows must be >= 0, not {limit_rows}")
+    stop = total if limit_rows is None else min(total, limit_rows)  # 0 is a zero-row run, never "everything"
 
     out_root.mkdir(parents=True, exist_ok=True)
     parts = out_root / f".{name}.era.parts"

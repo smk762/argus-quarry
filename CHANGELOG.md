@@ -35,6 +35,10 @@ All notable changes to argus-quarry are recorded here. The format follows [Keep 
 - Flickr upload-year breakpoints keep one time per photo id and pin a backdated first sample to the neighbouring bin, so one early posted date cannot bend the low end of the curve.
 - `open_readable` refuses a writable pool after `mode=ro` fails, instead of falling back to `immutable=1` and skipping the WAL. `iter_photographs` applies `offset` when no limit is given.
 - A semantic index fsyncs the new build and the pointer before older builds are deleted.
+- A semantic index build that fails after its pointer flip (an fsync error) keeps the build the pointer names instead of deleting it, and a failed pointer write no longer leaves its temp file behind.
+- `build_scores(limit_rows=0)` is a zero-row run instead of a full scoring pass, and a negative `limit_rows` is refused.
+- The Flickr upload calibration names every fetch path that dated a sample (a mixed run names both) and records per-path counts in `sources`.
+- `film_digital_set.py report --compare` keeps both results when two raters' files share a name, keyed by their paths.
 - `archives museum --rate` overrides a Met rate already set in config.
 - EXIF text keeps non-ASCII bytes (UTF-8, otherwise Latin-1) and drops NUL padding mixed with spaces.
 - Era calibration leaves a zero embedding at zero. Flickr upload calibration names its source from this run's sample only.

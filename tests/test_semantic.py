@@ -370,7 +370,88 @@ def test_index_files_are_durable_before_older_builds_are_deleted(tmp_path, monke
     sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
     assert "fsync" in events
     removed = next(i for i, event in enumerate(events) if isinstance(event, tuple))
-    assert events.index("fsync") < removed
+    # Every fsync, not just the first: a late one would reopen the data-loss window.
+    assert max(i for i, event in enumerate(events) if event == "fsync") < removed
+
+
+def test_every_index_file_pointer_and_dir_is_synced_before_older_builds_are_deleted(tmp_path, monkeypatch):
+    synced: list[str] = []
+    real_file, real_dir, real_rmtree = sem._fsync_file, sem._fsync_dir, sem.shutil.rmtree
+    removed_at: list[int] = []
+
+    def spy_file(p):
+        synced.append(str(p))
+        return real_file(p)
+
+    def spy_dir(p):
+        synced.append(str(p))
+        return real_dir(p)
+
+    def spy_rmtree(target, *a, **k):
+        removed_at.append(len(synced))
+        return real_rmtree(target, *a, **k)
+
+    path = tmp_path / "v.npy"
+    np.save(path, np.eye(4, dtype=np.float32))
+    out = tmp_path / "out"
+    sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    monkeypatch.setattr(sem, "_fsync_file", spy_file)
+    monkeypatch.setattr(sem, "_fsync_dir", spy_dir)
+    monkeypatch.setattr(sem.shutil, "rmtree", spy_rmtree)
+    meta = sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    assert removed_at, "the older build was not removed"
+    before = set(synced[: removed_at[0]])
+    building = out / f".{meta['dir']}.building"  # fsynced before its rename to the build dir
+    files = {str(building / f) for f in ("vectors.f16.npy", "index.faiss", "meta.json")}
+    assert files <= before
+    assert {str(building), str(sem.pointer_path(out, "tiny")), str(out)} <= before
+
+
+@pytest.mark.parametrize("failing", ["pointer", "dir"])
+def test_a_failed_fsync_after_the_pointer_flip_keeps_the_build_it_names(tmp_path, monkeypatch, failing):
+    path = tmp_path / "v.npy"
+    np.save(path, np.eye(4, dtype=np.float32))
+    out = tmp_path / "out"
+    sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    pointer = sem.pointer_path(out, "tiny")
+    real_file, real_dir = sem._fsync_file, sem._fsync_dir
+
+    def flaky_file(p):
+        if failing == "pointer" and Path(p) == pointer:
+            raise OSError(5, "EIO")
+        return real_file(p)
+
+    def flaky_dir(p):
+        if failing == "dir" and Path(p) == out:
+            raise OSError(5, "EIO")
+        return real_dir(p)
+
+    monkeypatch.setattr(sem, "_fsync_file", flaky_file)
+    monkeypatch.setattr(sem, "_fsync_dir", flaky_dir)
+    with pytest.raises(OSError):
+        sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    current = sem.read_pointer(out, "tiny")
+    assert current is not None and (out / current["dir"]).is_dir()  # the pointer never names a deleted build
+
+
+def test_a_failed_pointer_write_leaves_no_temp_pointer_behind(tmp_path, monkeypatch):
+    path = tmp_path / "v.npy"
+    np.save(path, np.eye(4, dtype=np.float32))
+    out = tmp_path / "out"
+    first = sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    pointer = sem.pointer_path(out, "tiny")
+    real_file = sem._fsync_file
+
+    def flaky_file(p):
+        if Path(p).name.startswith(f".{pointer.name}."):
+            raise OSError(28, "ENOSPC")
+        return real_file(p)
+
+    monkeypatch.setattr(sem, "_fsync_file", flaky_file)
+    with pytest.raises(OSError):
+        sem.build_vector_index([path], out, "tiny", expected_rows=4, model="test", factory="Flat")
+    assert not list(out.glob(f".{pointer.name}.*"))
+    assert sem.read_pointer(out, "tiny")["dir"] == first["dir"]
 
 
 # ── server ───────────────────────────────────────────────────────────────
